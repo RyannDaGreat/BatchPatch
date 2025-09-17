@@ -195,7 +195,11 @@
 
       try {
         const stream = canvas.captureStream(0); // 0 = manual frame capture
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'video/webm;codecs=vp9',
+          videoBitsPerSecond: 50000000
+        });
         const chunks = [];
 
         mediaRecorder.ondataavailable = e => chunks.push(e.data);
