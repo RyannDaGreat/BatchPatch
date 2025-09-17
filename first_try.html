@@ -1,0 +1,162 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Spacetime Hull — Snappy UI (Offline)</title>
+  <style>
+    :root{ --bg:#0b0d12; --fg:#e8eef5; --muted:#a7b3c2; --line:#1e2937; --accent:#67e8f9; }
+    *{box-sizing:border-box}
+    body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+    header { display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+    label { display:flex; align-items:center; gap:6px; color:var(--muted); }
+    input[type="range"]{ width:360px; }
+    input[type="number"]{ width:72px; padding:6px 8px; background:#0e1520; border:1px solid var(--line); color:var(--fg); border-radius:8px; }
+    input[type="file"], button{ padding:6px 10px; background:#0e1520; border:1px solid var(--line); color:var(--fg); border-radius:8px; cursor:pointer; }
+    button:hover{ outline:1px solid #243041 }
+    #frameBox{ padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#0e1520; font-variant-numeric:tabular-nums; }
+    #msg{ color:#ff7b7b; font-size:12px; margin-left:auto; }
+    main{ display:flex; }
+    canvas{ display:block; max-width:100%; height:auto; background:#000; cursor:crosshair; }
+  </style>
+</head>
+<body>
+  <header>
+    <input id="file" type="file" accept="video/*" />
+    <label>FPS <input id="fps" type="number" min="1" max="120" step="1" value="30"></label>
+    <input id="scrubber" type="range" min="0" max="0" step="1" value="0" />
+    <span id="frameBox">Frame 0/0 · 0.00s</span>
+    <button id="clear">Clear Points</button>
+    <span id="msg"></span>
+  </header>
+  <main>
+    <canvas id="canvas"></canvas>
+    <video id="video" muted playsinline preload="auto" style="display:none"></video>
+  </main>
+
+  <script>
+    // ===== Offline 3D Convex Hull (facet test) =====
+    function sub(a,b){ return {x:a.x-b.x, y:a.y-b.y, z:(a.t??a.z)-(b.t??b.z)}; }
+    function cross(u,v){ return {x:u.y*v.z-u.z*v.y, y:u.z*v.x-u.x*v.z, z:u.x*v.y-u.y*v.x}; }
+    function dot(a,b){ return a.x*b.x+a.y*b.y+a.z*b.z; }
+    function norm2(a){ return dot(a,a); }
+    function buildHullFaces(pts){
+      const n=pts.length, EPS=1e-6; if(n<4) return [];
+      const faces=[], seen=new Set();
+      for(let i=0;i<n;i++) for(let j=i+1;j<n;j++) for(let k=j+1;k<n;k++){
+        const a=pts[i], b=pts[j], c=pts[k];
+        const nrm = cross(sub(b,a), sub(c,a)); if(norm2(nrm)<EPS) continue;
+        let pos=false, neg=false;
+        for(let m=0;m<n;m++){ if(m===i||m===j||m===k) continue; const d=dot(nrm,sub(pts[m],a)); if(d>EPS) pos=true; else if(d<-EPS) neg=true; if(pos&&neg) break; }
+        if(pos&&neg) continue; const key=[i,j,k].sort((x,y)=>x-y).join(',');
+        if(!seen.has(key)){ seen.add(key); faces.push([i,j,k]); }
+      }
+      return faces;
+    }
+    function sliceFacesAtTime(pts,faces,T){
+      const EPS=1e-6, edges=[]; if(!faces.length) return [];
+      for(const f of faces){ const p0=pts[f[0]],p1=pts[f[1]],p2=pts[f[2]]; const tri=[p0,p1,p2]; const z=tri.map(p=>(p.t??p.z)-T); const seg=[];
+        for(let i=0;i<3;i++){ const a=tri[i], b=tri[(i+1)%3]; const za=z[i], zb=z[(i+1)%3]; if(Math.abs(za)<EPS) seg.push({x:a.x,y:a.y}); if(za*zb<0){ const alpha=za/(za-zb); seg.push({x:a.x+alpha*(b.x-a.x), y:a.y+alpha*(b.y-a.y)}); } }
+        if(seg.length===2) edges.push(seg);
+      }
+      if(!edges.length) return [];
+      const verts=[]; for(const e of edges){ for(const p of e){ if(!verts.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<1e-4)) verts.push(p); } }
+      if(verts.length<3) return [];
+      const cx=verts.reduce((s,p)=>s+p.x,0)/verts.length, cy=verts.reduce((s,p)=>s+p.y,0)/verts.length;
+      verts.sort((A,B)=>Math.atan2(A.y-cy,A.x-cx)-Math.atan2(B.y-cy,B.x-cx));
+      return verts;
+    }
+
+    // ===== App state =====
+    const file = document.getElementById('file');
+    const fpsInput = document.getElementById('fps');
+    const scrubber = document.getElementById('scrubber');
+    const frameBox = document.getElementById('frameBox');
+    const clearBtn = document.getElementById('clear');
+    const msg = document.getElementById('msg');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const video = document.getElementById('video');
+
+    let points=[];     // {x,y,t}
+    let faces=[];      // hull faces
+    let fps=30;        // user-defined fps for snapping
+    let totalFrames=0; // computed from duration * fps
+
+    function updateFrameBox(){
+      const f = Math.max(0, Math.min(totalFrames-1, currentFrameIndex()));
+      frameBox.textContent = `Frame ${f}/${Math.max(totalFrames-1,0)} · ${video.currentTime.toFixed(2)}s`;
+    }
+
+    function currentFrameIndex(){ return Math.round((video.currentTime||0) * fps); }
+    function frameToTime(fi){ return fi / fps; }
+
+    function snapAndSeek(fi){
+      const clamped = Math.max(0, Math.min(totalFrames-1, fi|0));
+      const t = frameToTime(clamped);
+      if (isFinite(video.duration)) video.currentTime = t;
+      scrubber.value = String(clamped);
+      updateFrameBox();
+      draw();
+    }
+
+    function recomputeHull(){ faces = buildHullFaces(points); msg.textContent = (points.length && faces.length===0)?'Need ≥4 points across different times for a 3D hull.':''; }
+
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const poly = sliceFacesAtTime(points, faces, video.currentTime||0);
+      if (poly.length >= 3){
+        ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
+        ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle='#67e8f9'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
+      }
+      const NEAR=0.05; for(const p of points){ const near=Math.abs((video.currentTime||0)-p.t)<NEAR; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
+    }
+
+    // ===== Event wiring =====
+    file.addEventListener('change', e=>{
+      const f=e.target.files[0]; if(!f) return; try{ if(video.src && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);}catch{}
+      const url=URL.createObjectURL(f); video.src=url; video.load();
+      video.addEventListener('loadeddata', ()=>{
+        canvas.width = video.videoWidth||640; canvas.height = video.videoHeight||360;
+        totalFrames = Math.max(1, Math.round((isFinite(video.duration)?video.duration:0)*fps));
+        scrubber.min = 0; scrubber.max = Math.max(0,totalFrames-1); scrubber.step = 1; scrubber.value = 0;
+        video.muted = true; video.play().then(()=>video.pause()).catch(()=>{});
+        video.currentTime = 0; updateFrameBox(); draw();
+      }, { once:true });
+      video.addEventListener('error', ()=>{ msg.textContent='Unable to decode this file in this browser.'; }, { once:true });
+    });
+
+    // Use requestVideoFrameCallback when available for perfect sync
+    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype){
+      const pump = ()=> video.requestVideoFrameCallback(()=>{ updateFrameBox(); draw(); pump(); }); pump();
+    } else {
+      // Fallback: timeupdate + RAF for responsive UI
+      video.addEventListener('timeupdate', ()=>{ updateFrameBox(); draw(); });
+      (function raf(){ draw(); requestAnimationFrame(raf); })();
+    }
+
+    // Slider snapping to frames
+    scrubber.addEventListener('input', e=>{ const fi = parseInt(e.target.value,10)||0; snapAndSeek(fi); });
+
+    // FPS change re-computes frame count + relabels UI without losing current time
+    fpsInput.addEventListener('change', ()=>{
+      const newFps = Math.max(1, Math.min(120, parseInt(fpsInput.value,10)||30));
+      const t = video.currentTime||0; fps = newFps; totalFrames = Math.max(1, Math.round((isFinite(video.duration)?video.duration:0)*fps));
+      scrubber.max = Math.max(0,totalFrames-1); snapAndSeek(Math.round(t*fps));
+    });
+
+    // Click to add point at snapped frame time
+    canvas.addEventListener('click', e=>{
+      if (!isFinite(video.duration)) return; const r=canvas.getBoundingClientRect();
+      const fi = currentFrameIndex(); const t = frameToTime(fi);
+      const x=e.clientX-r.left, y=e.clientY-r.top; points.push({x,y,t});
+      recomputeHull(); draw();
+    });
+
+    clearBtn.addEventListener('click', ()=>{ points=[]; faces=[]; msg.textContent=''; draw(); });
+
+    // Initial paint
+    draw(); updateFrameBox();
+  </script>
+</body>
+</html>
