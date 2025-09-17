@@ -253,7 +253,7 @@
     video.addEventListener('seeked', ()=>{ if(seekResolve) seekResolve(); });
 
     async function renderFrame(fi){
-      const clamped = Math.max(0, Math.min(totalFrames-1, fi|0));
+      const clamped = fi|0;
       const t = frameToTime(clamped);
 
       if (isFinite(video.duration)) {
@@ -303,17 +303,17 @@
 
     // ===== Event wiring =====
     file.addEventListener('change', async e=>{
-      const f=e.target.files[0]; if(!f) return; try{ if(video.src && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);}catch{}
+      const f=e.target.files[0]; if(!f) return; if(video.src && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);
 
       // Get actual frame count from MP4 metadata
-      totalFrames = Math.max(1, await parseMP4Frames(f));
+      totalFrames = await parseMP4Frames(f);
 
       const url=URL.createObjectURL(f); video.src=url; video.load();
       video.addEventListener('loadeddata', ()=>{
-        canvas.width = video.videoWidth||640; canvas.height = video.videoHeight||360;
-        fps = totalFrames / (video.duration || 1); // Calculate actual FPS
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        fps = totalFrames / video.duration;
         fpsInput.value = Math.round(fps);
-        scrubber.min = 0; scrubber.max = Math.max(0,totalFrames-1); scrubber.step = 1; scrubber.value = 0;
+        scrubber.min = 0; scrubber.max = totalFrames-1; scrubber.step = 1; scrubber.value = 0;
         video.muted = true; video.play().then(()=>video.pause()).catch(()=>{});
         renderFrame(0);
       }, { once:true });
@@ -322,11 +322,11 @@
 
     // Pure event handlers
     playPause.addEventListener('click', togglePlay);
-    scrubber.addEventListener('input', e=>{ stopPlay(); renderFrame(parseInt(e.target.value,10)||0); });
+    scrubber.addEventListener('input', e=>{ stopPlay(); renderFrame(parseInt(e.target.value,10)); });
 
     // FPS change updates UI scaling (totalFrames stays from MP4 metadata)
     fpsInput.addEventListener('change', ()=>{
-      const newFps = Math.max(1, Math.min(120, parseInt(fpsInput.value,10)||30));
+      const newFps = parseInt(fpsInput.value,10);
       fps = newFps;
       if(isPlaying) { stopPlay(); startPlay(); } // Restart with new fps
       else renderFrame(currentFrame);
@@ -461,7 +461,7 @@
     }
 
     renderVideoBtn.addEventListener('click', async ()=>{
-      if(!totalFrames || !video.duration) {
+      if(!totalFrames) {
         msg.textContent = 'Load a video first';
         return;
       }
