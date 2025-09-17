@@ -115,6 +115,19 @@
       border-color: rgba(103,232,249,0.6);
       background: linear-gradient(135deg, rgba(14,21,32,1) 0%, rgba(25,35,50,0.9) 100%);
     }
+    .file-button.pulse {
+      animation: pulseGlow 2s ease-in-out infinite;
+    }
+    @keyframes pulseGlow {
+      0%, 100% {
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+        border-color: rgba(103,232,249,0.3);
+      }
+      50% {
+        box-shadow: 0 8px 30px rgba(103,232,249,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
+        border-color: rgba(103,232,249,0.8);
+      }
+    }
     #frameBox{
       padding:6px 10px;
       background: linear-gradient(135deg, rgba(14,21,32,0.9) 0%, rgba(25,35,50,0.8) 100%);
@@ -210,6 +223,36 @@
       border-radius: 6px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
+    .video-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 25px;
+      padding: 40px 50px;
+      backdrop-filter: blur(20px);
+      box-shadow:
+        0 25px 50px rgba(0,0,0,0.4),
+        0 10px 20px rgba(0,0,0,0.3),
+        inset 0 1px 0 rgba(255,255,255,0.15);
+      text-align: center;
+      z-index: 100;
+      pointer-events: none;
+    }
+    .video-overlay h3 {
+      margin: 0 0 15px 0;
+      color: var(--accent);
+      font-size: 24px;
+      font-weight: normal;
+    }
+    .video-overlay p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -232,9 +275,12 @@
     <span id="msg"></span>
   </header>
   <main>
-    <div class="video-container">
+    <div class="video-container" style="position: relative;">
       <canvas id="canvas"></canvas>
       <video id="video" muted playsinline preload="auto" style="display:none"></video>
+      <div id="videoOverlay" class="video-overlay">
+        <p>Please choose a video</p>
+      </div>
     </div>
     <div id="hullPanel" class="hull-panel">
       <h3 style="margin:0 0 10px 0; font-size:14px;">Hulls</h3>
@@ -444,6 +490,7 @@
 
     // ===== App state =====
     const file = document.getElementById('file');
+    const fileButton = document.querySelector('.file-button');
     const fpsInput = document.getElementById('fps');
     const playPause = document.getElementById('playPause');
     const scrubber = document.getElementById('scrubber');
@@ -461,6 +508,7 @@
     const outputVideo1 = document.getElementById('outputVideo1');
     const outputVideo2 = document.getElementById('outputVideo2');
     const outputVideo3 = document.getElementById('outputVideo3');
+    const videoOverlay = document.getElementById('videoOverlay');
 
     let hulls = [{id: 0, name: 'Hull 1', points: [], color: '#67e8f9', visible: true}];
     let selectedHullId = 0;
@@ -543,7 +591,10 @@
             ctx.fill();
           } else { // GUI mode
             if(isSelected){
-              ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle=hullData.color; ctx.lineWidth=2;
+              const tintedWhite = getTintedWhite(hullData.color, 0.15);
+              ctx.fillStyle = tintedWhite.replace('rgb(', 'rgba(').replace(')', ', 0.5)');
+              ctx.strokeStyle = hullData.color;
+              ctx.lineWidth = 2;
             } else {
               ctx.fillStyle=getHullColor(hullData.color, 0.2); ctx.strokeStyle=getHullColor(hullData.color, 0.6); ctx.lineWidth=1;
             }
@@ -654,6 +705,16 @@
       return closestHull ? {hull: closestHull, index: closestIndex} : null;
     }
 
+    function updateVideoOverlay(){
+      if(totalFrames > 0 && isFinite(video.duration)){
+        videoOverlay.style.display = 'none';
+        fileButton.classList.remove('pulse');
+      } else {
+        videoOverlay.style.display = 'block';
+        fileButton.classList.add('pulse');
+      }
+    }
+
     function updateDisplay(){
       const selectedHull = getSelectedHull();
       const hull = buildHullFaces(selectedHull.points);
@@ -681,6 +742,7 @@
         fpsInput.value = Math.round(fps);
         scrubber.min = 0; scrubber.max = totalFrames-1; scrubber.step = 1; scrubber.value = 0;
         video.muted = true; video.play().then(()=>video.pause()).catch(()=>{});
+        updateVideoOverlay(); // Hide overlay when video loads
         renderFrame(0);
       }, { once:true });
       video.addEventListener('error', ()=>{ msg.textContent='Unable to decode this file in this browser.'; }, { once:true });
@@ -924,8 +986,9 @@
       updateDisplay();
     });
 
-    // Initialize hull list
+    // Initialize hull list and video overlay
     renderHullList();
+    updateVideoOverlay();
 
     // Helper function to render hull in different styles
     function renderHullForMode(hull, poly, frame, mode) {
