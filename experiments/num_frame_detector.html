@@ -11,37 +11,71 @@
     async function countFrames(file) {
         if (!file) return;
 
-        const video = document.createElement('video');
-        video.src = URL.createObjectURL(file);
-        video.muted = true;
+        const result = document.getElementById('result');
+        result.innerText = 'Parsing...';
 
-        await new Promise(resolve => video.onloadedmetadata = resolve);
+        try {
+            const buffer = await file.arrayBuffer();
+            const frames = parseMP4Frames(buffer);
 
-        let frames;
-        if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-            frames = await new Promise((resolve) => {
-                let frameCount = 0;
-                video.currentTime = 0;
-                video.play();
+            if (frames) {
+                result.innerText = `Frames: ${frames}`;
+            } else {
+                result.innerText = 'Could not parse frame count';
+            }
+        } catch (e) {
+            result.innerText = `Error: ${e.message}`;
+        }
+    }
 
-                function onFrame() {
-                    frameCount++;
-                    if (video.currentTime >= video.duration) {
-                        video.pause();
-                        resolve(frameCount);
-                    } else {
-                        video.requestVideoFrameCallback(onFrame);
-                    }
-                }
+    function parseMP4Frames(buffer) {
+        const view = new DataView(buffer);
 
-                video.requestVideoFrameCallback(onFrame);
-            });
-        } else {
-            frames = Math.round(video.duration * 30);
+        // Simple scan for stsz atom in video track
+        const moovStart = findSimpleAtom(0x6d6f6f76); // 'moov'
+        if (moovStart === -1) {
+            console.log('No moov atom found');
+            return null;
         }
 
-        document.getElementById('result').innerText = `Frames: ${frames}`;
-        URL.revokeObjectURL(video.src);
+        console.log('Found moov at', moovStart);
+
+        // Look for video handler first
+        let videoTrackFound = false;
+        for (let i = moovStart; i < buffer.byteLength - 20; i++) {
+            if (view.getUint32(i) === 0x68646c72 && view.getUint32(i + 12) === 0x76696465) { // hdlr + vide
+                videoTrackFound = true;
+                console.log('Found video handler at', i);
+                break;
+            }
+        }
+
+        if (!videoTrackFound) {
+            console.log('No video track found');
+            return null;
+        }
+
+        // Find stsz atom
+        for (let i = moovStart; i < buffer.byteLength - 20; i++) {
+            if (view.getUint32(i) === 0x7374737a) { // 'stsz'
+                const sampleSize = view.getUint32(i + 8);
+                const sampleCount = view.getUint32(i + 12);
+                console.log('Found stsz at', i, 'sample size:', sampleSize, 'count:', sampleCount);
+                return sampleCount;
+            }
+        }
+
+        console.log('No stsz atom found');
+        return null;
+
+        function findSimpleAtom(atomType) {
+            for (let i = 0; i < buffer.byteLength - 8; i++) {
+                if (view.getUint32(i + 4) === atomType) {
+                    return i;
+                }
+            }
+            return -1;
+        }
     }
     </script>
 </body>
