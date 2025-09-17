@@ -697,11 +697,10 @@
           } else if(e.target === colorBtn) {
             e.stopPropagation(); // Prevent hull selection
 
-            // Remove any existing color picker
+            // Remove any existing color picker first
             const existingPicker = document.querySelector('.color-picker-popup');
             if(existingPicker) {
               existingPicker.remove();
-              return;
             }
 
             // Create color picker popup
@@ -729,7 +728,7 @@
 
             // Close popup when clicking outside
             const closePopup = (event) => {
-              if (!popup.contains(event.target)) {
+              if (!popup.contains(event.target) && event.target !== colorBtn) {
                 popup.remove();
                 document.removeEventListener('click', closePopup);
                 renderHullList(); // Re-render hull list to show final color
@@ -739,7 +738,12 @@
             // Add click listener after a small delay to prevent immediate closure
             setTimeout(() => {
               document.addEventListener('click', closePopup);
-            }, 10);
+            }, 100);
+
+            // Automatically open the color picker dialog
+            setTimeout(() => {
+              colorInput.click();
+            }, 50);
           } else if(e.target === editBtn) {
             // Create an inline text input for editing the name
             const newName = prompt('Enter new hull name:', hull.name);
