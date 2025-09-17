@@ -110,20 +110,23 @@
       if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       const faces = buildHullFaces(points);
-      const poly = sliceFacesAtFrame(points, faces, currentFrame);
+      const poly = sliceFacesAtFrame(points, faces, clamped);
       if (poly.length >= 3){
         ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
         ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle='#67e8f9'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
       }
 
-      for(const p of points){ const near=currentFrame===p.z; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
+      for(const p of points){ const near=clamped===p.z; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
 
       currentFrame = clamped;
       scrubber.value = String(clamped);
-      frameBox.textContent = `Frame ${clamped}/${Math.max(totalFrames-1,0)} · ${t.toFixed(2)}s`;
+      frameBox.textContent = `Frame ${clamped+1}/${totalFrames} · ${t.toFixed(2)}s`;
     }
 
-    function updateDisplay(){ msg.textContent = (points.length>=4 && buildHullFaces(points).length===0)?'Need ≥4 points across different times for a 3D hull.':''; renderFrame(currentFrame); }
+    function updateDisplay(){
+      msg.textContent = (points.length>=4 && buildHullFaces(points).length===0)?'Need ≥4 points across different times for a 3D hull.':'';
+      renderFrame(currentFrame);
+    }
 
     // Pure play/pause state functions
     const togglePlay = () => isPlaying ? stopPlay() : startPlay();
