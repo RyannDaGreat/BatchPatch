@@ -27,12 +27,19 @@
     <input id="scrubber" type="range" min="0" max="0" step="1" value="0" />
     <span id="frameBox">Frame 0/0 · 0.00s</span>
     <button id="clear">Clear Points</button>
+    <button id="renderVideo">Render Video</button>
     <span id="msg"></span>
   </header>
   <main>
     <canvas id="canvas"></canvas>
     <video id="video" muted playsinline preload="auto" style="display:none"></video>
   </main>
+  <div id="outputContainer" style="display:none; margin-top:20px;">
+    <h3>Rendered Output:</h3>
+    <video id="outputVideo" controls style="max-width:100%;"></video>
+    <br>
+    <a id="downloadLink" style="display:none;">Download Video</a>
+  </div>
 
   <script>
     // ===== Offline 3D Convex Hull (facet test) =====
@@ -80,10 +87,14 @@
     const scrubber = document.getElementById('scrubber');
     const frameBox = document.getElementById('frameBox');
     const clearBtn = document.getElementById('clear');
+    const renderVideoBtn = document.getElementById('renderVideo');
     const msg = document.getElementById('msg');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const video = document.getElementById('video');
+    const outputContainer = document.getElementById('outputContainer');
+    const outputVideo = document.getElementById('outputVideo');
+    const downloadLink = document.getElementById('downloadLink');
 
     let points=[];     // {x,y,z} where z=frame index
     let fps=30;        // only for video seeking
@@ -172,6 +183,52 @@
     });
 
     clearBtn.addEventListener('click', ()=>{ points=[]; msg.textContent=''; renderFrame(currentFrame); });
+
+    renderVideoBtn.addEventListener('click', async ()=>{
+      if(!totalFrames || !video.duration) {
+        msg.textContent = 'Load a video first';
+        return;
+      }
+
+      msg.textContent = 'Rendering video...';
+      renderVideoBtn.disabled = true;
+
+      try {
+        const stream = canvas.captureStream(fps);
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        const chunks = [];
+
+        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+
+          outputVideo.src = url;
+          outputContainer.style.display = 'block';
+
+          downloadLink.href = url;
+          downloadLink.download = 'rendered_animation.webm';
+          downloadLink.textContent = 'Download Video';
+          downloadLink.style.display = 'inline';
+
+          msg.textContent = 'Video rendered!';
+          renderVideoBtn.disabled = false;
+        };
+
+        mediaRecorder.start();
+
+        // Render all frames
+        for(let frame = 0; frame < totalFrames; frame++) {
+          await renderFrame(frame);
+          await new Promise(resolve => setTimeout(resolve, 1000/fps));
+        }
+
+        mediaRecorder.stop();
+      } catch(e) {
+        msg.textContent = 'Error rendering video: ' + e.message;
+        renderVideoBtn.disabled = false;
+      }
+    });
   </script>
 </body>
 </html>
