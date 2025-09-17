@@ -35,7 +35,7 @@
   </main>
 
   <script>
-    // ===== 3D Convex Hull in (x,y,frame) space =====
+    // ===== Offline 3D Convex Hull (facet test) =====
     function sub(a,b){ return {x:a.x-b.x, y:a.y-b.y, z:a.z-b.z}; }
     function cross(u,v){ return {x:u.y*v.z-u.z*v.y, y:u.z*v.x-u.x*v.z, z:u.x*v.y-u.y*v.x}; }
     function dot(a,b){ return a.x*b.x+a.y*b.y+a.z*b.z; }
@@ -53,30 +53,15 @@
       }
       return faces;
     }
-    function sliceHullAtFrame(pts,faces,frame){
-      const verts=[]; if(!pts.length) return [];
-
-      // Exact points at this frame
-      for(const p of pts) if(p.z===frame) verts.push({x:p.x,y:p.y});
-
-      // Hull face intersections
-      for(const f of faces){
-        const tri=[pts[f[0]],pts[f[1]],pts[f[2]]];
-        const z=tri.map(p=>p.z-frame);
-        const seg=[];
-        for(let i=0;i<3;i++){
-          const a=tri[i], b=tri[(i+1)%3];
-          const za=z[i], zb=z[(i+1)%3];
-          if(za===0) seg.push({x:a.x,y:a.y});
-          if(za*zb<0){
-            const alpha=za/(za-zb);
-            seg.push({x:a.x+alpha*(b.x-a.x), y:a.y+alpha*(b.y-a.y)});
-          }
-        }
-        if(seg.length===2) for(const p of seg) if(!verts.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<1e-4)) verts.push(p);
+    function sliceFacesAtFrame(pts,faces,F){
+      const EPS=1e-6, edges=[]; if(!faces.length) return [];
+      for(const f of faces){ const p0=pts[f[0]],p1=pts[f[1]],p2=pts[f[2]]; const tri=[p0,p1,p2]; const z=tri.map(p=>p.z-F); const seg=[];
+        for(let i=0;i<3;i++){ const a=tri[i], b=tri[(i+1)%3]; const za=z[i], zb=z[(i+1)%3]; if(Math.abs(za)<EPS) seg.push({x:a.x,y:a.y}); if(za*zb<0){ const alpha=za/(za-zb); seg.push({x:a.x+alpha*(b.x-a.x), y:a.y+alpha*(b.y-a.y)}); } }
+        if(seg.length===2) edges.push(seg);
       }
-
-      if(verts.length<3) return verts;
+      if(!edges.length) return [];
+      const verts=[]; for(const e of edges){ for(const p of e){ if(!verts.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<1e-4)) verts.push(p); } }
+      if(verts.length<3) return [];
       const cx=verts.reduce((s,p)=>s+p.x,0)/verts.length, cy=verts.reduce((s,p)=>s+p.y,0)/verts.length;
       verts.sort((A,B)=>Math.atan2(A.y-cy,A.x-cx)-Math.atan2(B.y-cy,B.x-cx));
       return verts;
@@ -101,7 +86,6 @@
     const video = document.getElementById('video');
 
     let points=[];     // {x,y,z} where z=frame index
-    let faces=[];      // hull faces
     let fps=30;        // only for video seeking
     let totalFrames=0; // actual frame count from MP4 metadata
     let isPlaying=false;
@@ -125,7 +109,8 @@
       ctx.clearRect(0,0,canvas.width,canvas.height);
       if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const poly = sliceHullAtFrame(points, faces, currentFrame);
+      const faces = buildHullFaces(points);
+      const poly = sliceFacesAtFrame(points, faces, currentFrame);
       if (poly.length >= 3){
         ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
         ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle='#67e8f9'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
@@ -138,7 +123,7 @@
       frameBox.textContent = `Frame ${clamped}/${Math.max(totalFrames-1,0)} · ${t.toFixed(2)}s`;
     }
 
-    function recomputeHull(){ faces = buildHullFaces(points); msg.textContent = (points.length && faces.length===0)?'Need ≥4 points across different times for a 3D hull.':''; renderFrame(currentFrame); }
+    function updateDisplay(){ msg.textContent = (points.length>=4 && buildHullFaces(points).length===0)?'Need ≥4 points across different times for a 3D hull.':''; renderFrame(currentFrame); }
 
     // Pure play/pause state functions
     const togglePlay = () => isPlaying ? stopPlay() : startPlay();
@@ -180,10 +165,10 @@
     canvas.addEventListener('click', e=>{
       if (!isFinite(video.duration)) return; const r=canvas.getBoundingClientRect();
       const x=e.clientX-r.left, y=e.clientY-r.top; points.push({x,y,z:currentFrame});
-      recomputeHull();
+      updateDisplay();
     });
 
-    clearBtn.addEventListener('click', ()=>{ points=[]; faces=[]; msg.textContent=''; renderFrame(currentFrame); });
+    clearBtn.addEventListener('click', ()=>{ points=[]; msg.textContent=''; renderFrame(currentFrame); });
   </script>
 </body>
 </html>
