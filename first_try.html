@@ -86,7 +86,7 @@
       border-radius:12px;
       cursor:pointer;
       backdrop-filter: blur(10px);
-      transition: all 0.3s ease;
+      transition: all 0.15s ease;
       box-shadow: 0 4px 15px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
     }
     button:hover, select:hover{
@@ -94,6 +94,13 @@
       box-shadow: 0 8px 25px rgba(103,232,249,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
       border-color: rgba(103,232,249,0.6);
       background: linear-gradient(135deg, rgba(14,21,32,1) 0%, rgba(25,35,50,0.9) 100%);
+    }
+    button:active{
+      transform: translateY(0px);
+      box-shadow: 0 2px 8px rgba(103,232,249,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+      border-color: rgba(103,232,249,0.8);
+      background: linear-gradient(135deg, rgba(40,50,70,1) 0%, rgba(60,80,100,1) 100%);
+      transition: all 0.1s ease;
     }
     select option{ background:#0e1520; color:var(--fg); }
     input[type="file"]{ display:none; }
@@ -114,6 +121,13 @@
       box-shadow: 0 8px 25px rgba(103,232,249,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
       border-color: rgba(103,232,249,0.6);
       background: linear-gradient(135deg, rgba(14,21,32,1) 0%, rgba(25,35,50,0.9) 100%);
+    }
+    .file-button:active{
+      transform: translateY(0px);
+      box-shadow: 0 2px 8px rgba(103,232,249,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+      border-color: rgba(103,232,249,0.8);
+      background: linear-gradient(135deg, rgba(40,50,70,1) 0%, rgba(60,80,100,1) 100%);
+      transition: all 0.1s ease;
     }
     .file-button.pulse {
       animation: pulseGlow 2s ease-in-out infinite;
@@ -784,11 +798,24 @@
           } else if(e.target === colorBtn) {
             e.stopPropagation(); // Prevent hull selection
 
-            // Create a hidden color input and trigger it
+            // Remove any existing color picker first
+            const existingPicker = document.querySelector('.simple-color-picker');
+            if(existingPicker) {
+              existingPicker.remove();
+            }
+
+            // Create simple color picker next to button
             const colorInput = document.createElement('input');
             colorInput.type = 'color';
             colorInput.value = hull.color;
-            colorInput.style.display = 'none';
+            colorInput.className = 'simple-color-picker';
+            colorInput.style.cssText = 'position: absolute; z-index: 1000; width: 40px; height: 30px; border: none; border-radius: 4px; cursor: pointer;';
+
+            // Position next to the button
+            const buttonRect = colorBtn.getBoundingClientRect();
+            colorInput.style.left = (buttonRect.right + 5) + 'px';
+            colorInput.style.top = buttonRect.top + 'px';
+
             document.body.appendChild(colorInput);
 
             // Real-time color updates
@@ -798,17 +825,19 @@
               updateDisplay(); // Update display immediately
             });
 
-            // Clean up when done
-            colorInput.addEventListener('change', () => {
-              document.body.removeChild(colorInput);
-            });
-
-            colorInput.addEventListener('blur', () => {
-              if (document.body.contains(colorInput)) {
-                document.body.removeChild(colorInput);
+            // Close when clicking outside
+            const closeColorPicker = (event) => {
+              if (!colorInput.contains(event.target) && event.target !== colorBtn) {
+                colorInput.remove();
+                document.removeEventListener('click', closeColorPicker);
               }
-            });
+            };
 
+            setTimeout(() => {
+              document.addEventListener('click', closeColorPicker);
+            }, 100);
+
+            // Auto-open the color picker
             colorInput.click();
           } else if(e.target === editBtn) {
             // Create an inline text input for editing the name
