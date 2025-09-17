@@ -36,18 +36,18 @@
   </main>
   <div id="outputContainer" style="display:none; margin-top:20px;">
     <h3>Rendered Videos:</h3>
-    <div style="display:flex; gap:20px; flex-wrap:wrap;">
-      <div>
-        <h4>Black + White Hull</h4>
-        <video id="outputVideo1" controls style="max-width:300px;"></video>
-      </div>
-      <div>
+    <div style="display:flex; gap:20px; width:100%;">
+      <div style="flex:1;">
         <h4>Video + Hull + Points</h4>
-        <video id="outputVideo2" controls style="max-width:300px;"></video>
+        <video id="outputVideo1" controls autoplay loop muted style="width:100%;"></video>
       </div>
-      <div>
+      <div style="flex:1;">
         <h4>Video + Gray Hull</h4>
-        <video id="outputVideo3" controls style="max-width:300px;"></video>
+        <video id="outputVideo2" controls autoplay loop muted style="width:100%;"></video>
+      </div>
+      <div style="flex:1;">
+        <h4>Black + White Hull</h4>
+        <video id="outputVideo3" controls autoplay loop muted style="width:100%;"></video>
       </div>
     </div>
   </div>
@@ -352,7 +352,7 @@
           ctx.fillStyle='white';
           ctx.fill();
         } else if (mode === 'videoGray') {
-          ctx.fillStyle='rgba(128,128,128,0.5)';
+          ctx.fillStyle='rgb(128,128,128)';
           ctx.fill();
         } else { // videoTransparent
           ctx.fillStyle='rgba(255,255,255,0.5)';
@@ -371,7 +371,7 @@
           ctx.lineWidth=3;
           ctx.stroke();
         } else if (mode === 'videoGray') {
-          ctx.strokeStyle='rgba(128,128,128,0.8)';
+          ctx.strokeStyle='rgb(128,128,128)';
           ctx.lineWidth=3;
           ctx.stroke();
         } else { // videoTransparent
@@ -387,7 +387,7 @@
           ctx.fillStyle='white';
           ctx.fill();
         } else if (mode === 'videoGray') {
-          ctx.fillStyle='rgba(128,128,128,0.8)';
+          ctx.fillStyle='rgb(128,128,128)';
           ctx.fill();
         } else { // videoTransparent
           ctx.fillStyle='#67e8f9';
@@ -470,15 +470,36 @@
       try {
         msg.textContent = 'Rendering videos...';
 
-        // Render all three videos
-        const url1 = await renderSingleVideo('blackWhite');
-        const url2 = await renderSingleVideo('videoTransparent');
-        const url3 = await renderSingleVideo('videoGray');
+        // Render all three videos in correct order
+        const url1 = await renderSingleVideo('videoTransparent');
+        const url2 = await renderSingleVideo('videoGray');
+        const url3 = await renderSingleVideo('blackWhite');
 
         // Set video sources
         outputVideo1.src = url1;
         outputVideo2.src = url2;
         outputVideo3.src = url3;
+
+        // Sync video playback
+        outputVideo1.addEventListener('loadeddata', () => {
+          outputVideo2.currentTime = outputVideo1.currentTime;
+          outputVideo3.currentTime = outputVideo1.currentTime;
+        });
+
+        outputVideo1.addEventListener('play', () => {
+          outputVideo2.play();
+          outputVideo3.play();
+        });
+
+        outputVideo1.addEventListener('pause', () => {
+          outputVideo2.pause();
+          outputVideo3.pause();
+        });
+
+        outputVideo1.addEventListener('seeked', () => {
+          outputVideo2.currentTime = outputVideo1.currentTime;
+          outputVideo3.currentTime = outputVideo1.currentTime;
+        });
 
         outputContainer.style.display = 'block';
         msg.textContent = 'All videos rendered!';
