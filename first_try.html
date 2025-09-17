@@ -227,6 +227,16 @@
       z-index: 100;
       pointer-events: none;
     }
+    .simple-color-picker {
+      position: absolute;
+      z-index: 1000;
+      width: 40px;
+      height: 30px;
+      border: 1px solid rgba(103,232,249,0.5);
+      border-radius: 6px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
     .video-overlay h3 {
       margin: 0 0 15px 0;
       color: var(--accent);
@@ -809,12 +819,11 @@
             colorInput.type = 'color';
             colorInput.value = hull.color;
             colorInput.className = 'simple-color-picker';
-            colorInput.style.cssText = 'position: absolute; z-index: 1000; width: 40px; height: 30px; border: none; border-radius: 4px; cursor: pointer;';
 
             // Position next to the button
             const buttonRect = colorBtn.getBoundingClientRect();
-            colorInput.style.left = (buttonRect.right + 5) + 'px';
-            colorInput.style.top = buttonRect.top + 'px';
+            colorInput.style.left = (buttonRect.right + window.scrollX + 5) + 'px';
+            colorInput.style.top = (buttonRect.top + window.scrollY) + 'px';
 
             document.body.appendChild(colorInput);
 
