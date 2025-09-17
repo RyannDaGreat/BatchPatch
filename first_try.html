@@ -48,30 +48,162 @@
     function dot(a,b){ return a.x*b.x+a.y*b.y+a.z*b.z; }
     function norm2(a){ return dot(a,a); }
     function buildHullFaces(pts){
-      const n=pts.length, EPS=1e-6; if(n<4) return [];
+      const n=pts.length, EPS=1e-6;
+      if(n<2) return {faces:[], edges:[], type:'empty'};
+      if(n<3) return {faces:[], edges:[[0,1]], type:'1d'};
+
+      // Try 3D hull first
       const faces=[], seen=new Set();
       for(let i=0;i<n;i++) for(let j=i+1;j<n;j++) for(let k=j+1;k<n;k++){
         const a=pts[i], b=pts[j], c=pts[k];
         const nrm = cross(sub(b,a), sub(c,a)); if(norm2(nrm)<EPS) continue;
-        let pos=false, neg=false;
-        for(let m=0;m<n;m++){ if(m===i||m===j||m===k) continue; const d=dot(nrm,sub(pts[m],a)); if(d>EPS) pos=true; else if(d<-EPS) neg=true; if(pos&&neg) break; }
-        if(pos&&neg) continue; const key=[i,j,k].sort((x,y)=>x-y).join(',');
+        let pos=false, neg=false, onPlane=0;
+        for(let m=0;m<n;m++){ if(m===i||m===j||m===k) continue; const d=dot(nrm,sub(pts[m],a)); if(d>EPS) pos=true; else if(d<-EPS) neg=true; else onPlane++; if(pos&&neg) break; }
+        if(pos&&neg) continue; if(onPlane===n-3) continue; const key=[i,j,k].sort((x,y)=>x-y).join(',');
         if(!seen.has(key)){ seen.add(key); faces.push([i,j,k]); }
       }
-      return faces;
-    }
-    function sliceFacesAtFrame(pts,faces,F){
-      const EPS=1e-6, edges=[]; if(!faces.length) return [];
-      for(const f of faces){ const p0=pts[f[0]],p1=pts[f[1]],p2=pts[f[2]]; const tri=[p0,p1,p2]; const z=tri.map(p=>p.z-F); const seg=[];
-        for(let i=0;i<3;i++){ const a=tri[i], b=tri[(i+1)%3]; const za=z[i], zb=z[(i+1)%3]; if(Math.abs(za)<EPS) seg.push({x:a.x,y:a.y}); if(za*zb<0){ const alpha=za/(za-zb); seg.push({x:a.x+alpha*(b.x-a.x), y:a.y+alpha*(b.y-a.y)}); } }
-        if(seg.length===2) edges.push(seg);
+      if(faces.length>0) return {faces, edges:[], type:'3d'};
+
+      // Check if points are collinear (1D manifold)
+      if(n>=3){
+        const dir1 = sub(pts[1], pts[0]);
+        let allCollinear = true;
+        for(let i=2;i<n;i++){
+          const dir2 = sub(pts[i], pts[0]);
+          const crossProd = cross(dir1, dir2);
+          if(norm2(crossProd) > EPS) { allCollinear = false; break; }
+        }
+        if(allCollinear){
+          // Find extreme points along the line
+          const dots = pts.map((p,i) => ({i, dot: dot(sub(p,pts[0]), dir1)}));
+          dots.sort((a,b) => a.dot - b.dot);
+          return {faces:[], edges:[[dots[0].i, dots[dots.length-1].i]], type:'1d'};
+        }
       }
-      if(!edges.length) return [];
-      const verts=[]; for(const e of edges){ for(const p of e){ if(!verts.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<1e-4)) verts.push(p); } }
-      if(verts.length<3) return [];
-      const cx=verts.reduce((s,p)=>s+p.x,0)/verts.length, cy=verts.reduce((s,p)=>s+p.y,0)/verts.length;
-      verts.sort((A,B)=>Math.atan2(A.y-cy,A.x-cx)-Math.atan2(B.y-cy,B.x-cx));
-      return verts;
+
+      // Points are coplanar (2D manifold) - compute 2D convex hull
+      // Find plane normal from first 3 non-collinear points
+      let normal = null;
+      for(let i=0;i<n && !normal;i++) for(let j=i+1;j<n && !normal;j++) for(let k=j+1;k<n && !normal;k++){
+        const nrm = cross(sub(pts[j],pts[i]), sub(pts[k],pts[i]));
+        if(norm2(nrm) > EPS) normal = nrm;
+      }
+      if(!normal) return {faces:[], edges:[], type:'empty'};
+
+      // Project to 2D plane and compute convex hull
+      const basis1 = Math.abs(normal.x) < 0.9 ? {x:1,y:0,z:0} : {x:0,y:1,z:0};
+      const u = cross(normal, basis1); const uLen = Math.sqrt(norm2(u));
+      const uNorm = {x:u.x/uLen, y:u.y/uLen, z:u.z/uLen};
+      const v = cross(normal, uNorm);
+
+      const pts2d = pts.map(p => ({x:dot(p,uNorm), y:dot(p,v), i:pts.indexOf(p)}));
+      const hull2d = convexHull2D(pts2d);
+      const edges = hull2d.map((idx,i) => [hull2d[i], hull2d[(i+1)%hull2d.length]]);
+
+      return {faces:[], edges, type:'2d'};
+    }
+
+    function convexHull2D(pts){
+      if(pts.length < 3) return pts.map(p => p.i);
+      const sorted = [...pts].sort((a,b) => a.x !== b.x ? a.x - b.x : a.y - b.y);
+      const lower = [], upper = [];
+      for(const p of sorted){
+        while(lower.length >= 2 && cross2D(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
+        lower.push(p);
+      }
+      for(let i=sorted.length-1;i>=0;i--){
+        const p = sorted[i];
+        while(upper.length >= 2 && cross2D(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
+        upper.push(p);
+      }
+      upper.pop(); lower.pop();
+      return lower.concat(upper).map(p => p.i);
+    }
+
+    function cross2D(a,b,c){ return (b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x); }
+    function sliceHullAtFrame(pts, hull, F){
+      const EPS=1e-6;
+
+      if(hull.type === '3d'){
+        // Original 3D face slicing
+        const edges=[];
+        for(const f of hull.faces){
+          const p0=pts[f[0]],p1=pts[f[1]],p2=pts[f[2]];
+          const tri=[p0,p1,p2];
+          const z=tri.map(p=>p.z-F);
+          const seg=[];
+          for(let i=0;i<3;i++){
+            const a=tri[i], b=tri[(i+1)%3];
+            const za=z[i], zb=z[(i+1)%3];
+            if(Math.abs(za)<EPS) seg.push({x:a.x,y:a.y});
+            if(za*zb<0){
+              const alpha=za/(za-zb);
+              seg.push({x:a.x+alpha*(b.x-a.x), y:a.y+alpha*(b.y-a.y)});
+            }
+          }
+          if(seg.length===2) edges.push(seg);
+        }
+        if(!edges.length) return [];
+        const verts=[];
+        for(const e of edges){
+          for(const p of e){
+            if(!verts.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<1e-4)) verts.push(p);
+          }
+        }
+        if(verts.length<3) return [];
+        const cx=verts.reduce((s,p)=>s+p.x,0)/verts.length, cy=verts.reduce((s,p)=>s+p.y,0)/verts.length;
+        verts.sort((A,B)=>Math.atan2(A.y-cy,A.x-cx)-Math.atan2(B.y-cy,B.x-cx));
+        return verts;
+      }
+
+      if(hull.type === '2d'){
+        // Slice 2D hull edges at frame F
+        const segments = [];
+        for(const [i,j] of hull.edges){
+          const a = pts[i], b = pts[j];
+          const za = a.z - F, zb = b.z - F;
+          if(Math.abs(za) < EPS) segments.push({x:a.x, y:a.y});
+          if(Math.abs(zb) < EPS) segments.push({x:b.x, y:b.y});
+          if(za * zb < 0){
+            const alpha = za / (za - zb);
+            segments.push({x: a.x + alpha*(b.x-a.x), y: a.y + alpha*(b.y-a.y)});
+          }
+        }
+
+        if(segments.length < 2) return [];
+
+        // Remove duplicates and sort
+        const unique = [];
+        for(const p of segments){
+          if(!unique.some(q => Math.hypot(q.x-p.x, q.y-p.y) < 1e-4)) unique.push(p);
+        }
+
+        if(unique.length >= 3){
+          const cx = unique.reduce((s,p)=>s+p.x,0)/unique.length;
+          const cy = unique.reduce((s,p)=>s+p.y,0)/unique.length;
+          unique.sort((A,B)=>Math.atan2(A.y-cy,A.x-cx)-Math.atan2(B.y-cy,B.x-cx));
+        }
+
+        return unique;
+      }
+
+      if(hull.type === '1d'){
+        // Slice line segment at frame F
+        const [i,j] = hull.edges[0];
+        const a = pts[i], b = pts[j];
+        const za = a.z - F, zb = b.z - F;
+
+        if(Math.abs(za) < EPS) return [{x:a.x, y:a.y}];
+        if(Math.abs(zb) < EPS) return [{x:b.x, y:b.y}];
+        if(za * zb < 0){
+          const alpha = za / (za - zb);
+          return [{x: a.x + alpha*(b.x-a.x), y: a.y + alpha*(b.y-a.y)}];
+        }
+
+        return [];
+      }
+
+      return [];
     }
 
     // ===== MP4 Frame Counter =====
@@ -120,11 +252,22 @@
       ctx.clearRect(0,0,canvas.width,canvas.height);
       if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const faces = buildHullFaces(points);
-      const poly = sliceFacesAtFrame(points, faces, clamped);
+      const hull = buildHullFaces(points);
+      const poly = sliceHullAtFrame(points, hull, clamped);
+
+      // Render hull slice based on type
       if (poly.length >= 3){
+        // Polygon (3D or 2D hull)
         ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
         ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle='#67e8f9'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
+      } else if (poly.length === 2){
+        // Line segment (2D hull edge or 1D hull)
+        ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y); ctx.lineTo(poly[1].x, poly[1].y);
+        ctx.strokeStyle='#67e8f9'; ctx.lineWidth=3; ctx.stroke();
+      } else if (poly.length === 1){
+        // Single point (1D hull intersection)
+        ctx.beginPath(); ctx.arc(poly[0].x, poly[0].y, 6, 0, 2*Math.PI);
+        ctx.fillStyle='#67e8f9'; ctx.fill();
       }
 
       for(const p of points){ const near=clamped===p.z; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
@@ -135,7 +278,9 @@
     }
 
     function updateDisplay(){
-      msg.textContent = (points.length>=4 && buildHullFaces(points).length===0)?'Need ≥4 points across different times for a 3D hull.':'';
+      const hull = buildHullFaces(points);
+      const warning = (points.length>=4 && hull.type==='empty') ? 'Need ≥4 points across different times for a 3D hull.' : '';
+      msg.textContent = warning;
       renderFrame(currentFrame);
     }
 
@@ -229,11 +374,22 @@
           ctx.clearRect(0,0,canvas.width,canvas.height);
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-          const faces = buildHullFaces(points);
-          const poly = sliceFacesAtFrame(points, faces, frame);
+          const hull = buildHullFaces(points);
+          const poly = sliceHullAtFrame(points, hull, frame);
+
+          // Render hull slice based on type
           if (poly.length >= 3){
+            // Polygon (3D or 2D hull)
             ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
             ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle='#67e8f9'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
+          } else if (poly.length === 2){
+            // Line segment (2D hull edge or 1D hull)
+            ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y); ctx.lineTo(poly[1].x, poly[1].y);
+            ctx.strokeStyle='#67e8f9'; ctx.lineWidth=3; ctx.stroke();
+          } else if (poly.length === 1){
+            // Single point (1D hull intersection)
+            ctx.beginPath(); ctx.arc(poly[0].x, poly[0].y, 6, 0, 2*Math.PI);
+            ctx.fillStyle='#67e8f9'; ctx.fill();
           }
 
           for(const p of points){ const near=frame===p.z; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
