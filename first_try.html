@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Spacetime Hull — Snappy UI (Offline)</title>
-  <style>
+    <style>
     @font-face {
       font-family: 'Futura';
       src: url('https://github.com/RyannDaGreat/Images/raw/refs/heads/master/fonts/Futura.ttc') format('truetype-collection');
@@ -12,21 +12,176 @@
     }
     :root{ --bg:#0b0d12; --fg:#e8eef5; --muted:#a7b3c2; --line:#1e2937; --accent:#67e8f9; }
     *{box-sizing:border-box}
-    body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.35 Futura,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-    header { display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+    body {
+      margin:0;
+      background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 25%, #2d1b2e 50%, #3d2352 75%, #4a2c5a 100%);
+      min-height: 100vh;
+      color:var(--fg);
+      font:14px/1.35 Futura,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    }
+    *, *::before, *::after { font-family:inherit; }
+    header {
+      display:flex;
+      gap:10px;
+      align-items:center;
+      padding:20px;
+      margin: 20px 20px 0 20px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 100%);
+      border-radius: 25px;
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.15);
+      box-shadow:
+        0 15px 35px rgba(0,0,0,0.2),
+        inset 0 1px 0 rgba(255,255,255,0.1);
+      flex-wrap:wrap;
+    }
     label { display:flex; align-items:center; gap:6px; color:var(--muted); }
-    input[type="range"]{ width:360px; }
-    input[type="number"]{ width:72px; padding:6px 8px; background:#0e1520; border:1px solid var(--line); color:var(--fg); border-radius:8px; }
-    button, select{ padding:6px 10px; background:#0e1520; border:1px solid var(--line); color:var(--fg); border-radius:8px; cursor:pointer; }
+    input[type="range"]{
+      width:360px;
+      appearance:none;
+      height:8px;
+      border-radius:4px;
+      background:linear-gradient(90deg, #ff0080 0%, #67e8f9 100%);
+      outline:none;
+    }
+    input[type="range"]::-webkit-slider-thumb{
+      appearance:none;
+      width:20px;
+      height:20px;
+      border-radius:50%;
+      background:linear-gradient(45deg, #ff0080, #00ffff);
+      cursor:pointer;
+      box-shadow:0 0 10px rgba(255,0,128,0.5);
+    }
+    input[type="range"]::-moz-range-thumb{
+      width:20px;
+      height:20px;
+      border-radius:50%;
+      background:linear-gradient(45deg, #ff0080, #00ffff);
+      cursor:pointer;
+      border:none;
+      box-shadow:0 0 10px rgba(255,0,128,0.5);
+    }
+    input[type="number"]{
+      width:72px;
+      padding:6px 8px;
+      background: linear-gradient(135deg, rgba(14,21,32,0.9) 0%, rgba(25,35,50,0.8) 100%);
+      border:1px solid rgba(103,232,249,0.3);
+      color:var(--fg);
+      border-radius:12px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+      transition: all 0.3s ease;
+    }
+    input[type="number"]:focus{
+      outline: none;
+      border-color: rgba(103,232,249,0.6);
+      box-shadow: 0 8px 25px rgba(103,232,249,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+    }
+    button, select{
+      padding:6px 10px;
+      background: linear-gradient(135deg, rgba(14,21,32,0.9) 0%, rgba(25,35,50,0.8) 100%);
+      border:1px solid rgba(103,232,249,0.3);
+      color:var(--fg);
+      border-radius:12px;
+      cursor:pointer;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+    button:hover, select:hover{
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(103,232,249,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+      border-color: rgba(103,232,249,0.6);
+      background: linear-gradient(135deg, rgba(14,21,32,1) 0%, rgba(25,35,50,0.9) 100%);
+    }
     select option{ background:#0e1520; color:var(--fg); }
     input[type="file"]{ display:none; }
-    .file-button{ padding:6px 10px; background:#0e1520; border:1px solid var(--line); color:var(--fg); border-radius:8px; cursor:pointer; display:inline-block; }
-    .file-button:hover{ outline:1px solid #243041 }
-    button:hover{ outline:1px solid #243041 }
-    #frameBox{ padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#0e1520; font-variant-numeric:tabular-nums; }
+    .file-button{
+      padding:6px 10px;
+      background: linear-gradient(135deg, rgba(14,21,32,0.9) 0%, rgba(25,35,50,0.8) 100%);
+      border:1px solid rgba(103,232,249,0.3);
+      color:var(--fg);
+      border-radius:12px;
+      cursor:pointer;
+      display:inline-block;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+    .file-button:hover{
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(103,232,249,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+      border-color: rgba(103,232,249,0.6);
+      background: linear-gradient(135deg, rgba(14,21,32,1) 0%, rgba(25,35,50,0.9) 100%);
+    }
+    #frameBox{
+      padding:6px 10px;
+      background: linear-gradient(135deg, rgba(14,21,32,0.9) 0%, rgba(25,35,50,0.8) 100%);
+      border:1px solid rgba(103,232,249,0.3);
+      border-radius:12px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+      font-variant-numeric:tabular-nums;
+      width:160px;
+      transition: all 0.3s ease;
+    }
+    #playPause{ min-width:32px; text-align:center; }
     #msg{ color:#ff7b7b; font-size:12px; margin-left:auto; }
-    main{ display:flex; }
-    canvas{ display:block; max-width:100%; height:auto; background:#000; cursor:crosshair; }
+    main{
+      display:flex;
+      padding: 20px;
+      gap: 20px;
+    }
+    .video-container {
+      flex: 1;
+      padding: 20px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+      border-radius: 30px;
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow:
+        0 20px 40px rgba(0,0,0,0.3),
+        0 10px 20px rgba(0,0,0,0.2),
+        inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+    canvas{
+      display:block;
+      width:100%;
+      height:auto;
+      background:#000;
+      cursor:crosshair;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+    .eye-open {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      background-repeat: no-repeat;
+      background-size: 100% 100%;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cg fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='1'%3E%3Cpath d='M7 3.625c-4.187 0-5.945 3.766-5.945 3.844S2.813 11.312 7 11.312s5.945-3.765 5.945-3.843S11.187 3.625 7 3.625M2.169 5.813L.61 4.252m4.525-.354L4.5 1.843m7.331 3.97l1.559-1.56m-4.525-.355L9.5 1.843'/%3E%3Cpath d='M5.306 7.081a1.738 1.738 0 1 0 3.388.776a1.738 1.738 0 1 0-3.388-.776'/%3E%3C/g%3E%3C/svg%3E");
+    }
+    .eye-closed {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      background-repeat: no-repeat;
+      background-size: 100% 100%;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m15 18l-.722-3.25M2 8a10.645 10.645 0 0 0 20 0m-2 7l-1.726-2.05M4 15l1.726-2.05M9 18l.722-3.25'/%3E%3C/svg%3E");
+    }
+    .hull-panel {
+      width: 240px;
+      padding: 20px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+      border-radius: 30px;
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow:
+        0 20px 40px rgba(0,0,0,0.3),
+        0 10px 20px rgba(0,0,0,0.2),
+        inset 0 1px 0 rgba(255,255,255,0.1);
+    }
   </style>
 </head>
 <body>
@@ -48,12 +203,12 @@
     </label>
     <span id="msg"></span>
   </header>
-  <main style="display:flex; gap:20px;">
-    <div style="flex:1;">
+  <main>
+    <div class="video-container">
       <canvas id="canvas"></canvas>
       <video id="video" muted playsinline preload="auto" style="display:none"></video>
     </div>
-    <div id="hullPanel" style="width:200px; padding:10px; border-left:1px solid var(--line);">
+    <div id="hullPanel" class="hull-panel">
       <h3 style="margin:0 0 10px 0; font-size:14px;">Hulls</h3>
       <div id="hullList"></div>
       <button id="addHull" style="width:100%; margin-top:10px;">+ Add Hull</button>
