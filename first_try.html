@@ -27,7 +27,7 @@
     <input id="scrubber" type="range" min="0" max="0" step="1" value="0" />
     <span id="frameBox">Frame 0/0 · 0.00s</span>
     <button id="clear">Clear Points</button>
-    <button id="renderVideo">Render Video</button>
+    <button id="renderVideo">Render 3 Videos</button>
     <span id="msg"></span>
   </header>
   <main>
@@ -35,10 +35,21 @@
     <video id="video" muted playsinline preload="auto" style="display:none"></video>
   </main>
   <div id="outputContainer" style="display:none; margin-top:20px;">
-    <h3>Rendered Output:</h3>
-    <video id="outputVideo" controls style="max-width:100%;"></video>
-    <br>
-    <a id="downloadLink" style="display:none;">Download Video</a>
+    <h3>Rendered Videos:</h3>
+    <div style="display:flex; gap:20px; flex-wrap:wrap;">
+      <div>
+        <h4>Black + White Hull</h4>
+        <video id="outputVideo1" controls style="max-width:300px;"></video>
+      </div>
+      <div>
+        <h4>Video + Hull + Points</h4>
+        <video id="outputVideo2" controls style="max-width:300px;"></video>
+      </div>
+      <div>
+        <h4>Video + Gray Hull</h4>
+        <video id="outputVideo3" controls style="max-width:300px;"></video>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -225,8 +236,9 @@
     const ctx = canvas.getContext('2d');
     const video = document.getElementById('video');
     const outputContainer = document.getElementById('outputContainer');
-    const outputVideo = document.getElementById('outputVideo');
-    const downloadLink = document.getElementById('downloadLink');
+    const outputVideo1 = document.getElementById('outputVideo1');
+    const outputVideo2 = document.getElementById('outputVideo2');
+    const outputVideo3 = document.getElementById('outputVideo3');
 
     let points=[];     // {x,y,z} where z=frame index
     let fps=30;        // only for video seeking
@@ -329,82 +341,151 @@
 
     clearBtn.addEventListener('click', ()=>{ points=[]; msg.textContent=''; renderFrame(currentFrame); });
 
+    // Helper function to render hull in different styles
+    function renderHullForMode(hull, poly, frame, mode) {
+      if (poly.length >= 3) {
+        ctx.beginPath();
+        for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y);
+        ctx.closePath();
+
+        if (mode === 'blackWhite') {
+          ctx.fillStyle='white';
+          ctx.fill();
+        } else if (mode === 'videoGray') {
+          ctx.fillStyle='rgba(128,128,128,0.5)';
+          ctx.fill();
+        } else { // videoTransparent
+          ctx.fillStyle='rgba(255,255,255,0.5)';
+          ctx.strokeStyle='#67e8f9';
+          ctx.lineWidth=2;
+          ctx.fill();
+          ctx.stroke();
+        }
+      } else if (poly.length === 2) {
+        ctx.beginPath();
+        ctx.moveTo(poly[0].x, poly[0].y);
+        ctx.lineTo(poly[1].x, poly[1].y);
+
+        if (mode === 'blackWhite') {
+          ctx.strokeStyle='white';
+          ctx.lineWidth=3;
+          ctx.stroke();
+        } else if (mode === 'videoGray') {
+          ctx.strokeStyle='rgba(128,128,128,0.8)';
+          ctx.lineWidth=3;
+          ctx.stroke();
+        } else { // videoTransparent
+          ctx.strokeStyle='#67e8f9';
+          ctx.lineWidth=3;
+          ctx.stroke();
+        }
+      } else if (poly.length === 1) {
+        ctx.beginPath();
+        ctx.arc(poly[0].x, poly[0].y, 6, 0, 2*Math.PI);
+
+        if (mode === 'blackWhite') {
+          ctx.fillStyle='white';
+          ctx.fill();
+        } else if (mode === 'videoGray') {
+          ctx.fillStyle='rgba(128,128,128,0.8)';
+          ctx.fill();
+        } else { // videoTransparent
+          ctx.fillStyle='#67e8f9';
+          ctx.fill();
+        }
+      }
+    }
+
+    async function renderSingleVideo(mode) {
+      const stream = canvas.captureStream(0);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm;codecs=vp9',
+        videoBitsPerSecond: 50000000
+      });
+      const chunks = [];
+
+      return new Promise((resolve, reject) => {
+        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          resolve(URL.createObjectURL(blob));
+        };
+
+        mediaRecorder.start();
+
+        (async () => {
+          for(let frame = 0; frame < totalFrames; frame++) {
+            const t = frameToTime(frame);
+            video.currentTime = t;
+
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+
+            // Background
+            if (mode === 'blackWhite') {
+              ctx.fillStyle = 'black';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+            } else {
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            }
+
+            const hull = buildHullFaces(points);
+            const poly = sliceHullAtFrame(points, hull, frame);
+
+            renderHullForMode(hull, poly, frame, mode);
+
+            // Render points only for videoTransparent mode
+            if (mode === 'videoTransparent') {
+              for(const p of points){
+                const near=frame===p.z;
+                ctx.beginPath();
+                ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI);
+                ctx.fillStyle='#fff';
+                ctx.fill();
+                ctx.lineWidth=2;
+                ctx.strokeStyle=near?'#00ffa6':'#000';
+                ctx.stroke();
+              }
+            }
+
+            const track = stream.getVideoTracks()[0];
+            track.requestFrame();
+
+            msg.textContent = `Rendering ${mode} ${frame+1}/${totalFrames}`;
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+
+          mediaRecorder.stop();
+        })().catch(reject);
+      });
+    }
+
     renderVideoBtn.addEventListener('click', async ()=>{
       if(!totalFrames || !video.duration) {
         msg.textContent = 'Load a video first';
         return;
       }
 
-      msg.textContent = 'Rendering video...';
       renderVideoBtn.disabled = true;
 
       try {
-        const stream = canvas.captureStream(0); // 0 = manual frame capture
+        msg.textContent = 'Rendering videos...';
 
-        const mediaRecorder = new MediaRecorder(stream, {
-          mimeType: 'video/webm;codecs=vp9',
-          videoBitsPerSecond: 50000000
-        });
-        const chunks = [];
+        // Render all three videos
+        const url1 = await renderSingleVideo('blackWhite');
+        const url2 = await renderSingleVideo('videoTransparent');
+        const url3 = await renderSingleVideo('videoGray');
 
-        mediaRecorder.ondataavailable = e => chunks.push(e.data);
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
+        // Set video sources
+        outputVideo1.src = url1;
+        outputVideo2.src = url2;
+        outputVideo3.src = url3;
 
-          outputVideo.src = url;
-          outputContainer.style.display = 'block';
+        outputContainer.style.display = 'block';
+        msg.textContent = 'All videos rendered!';
 
-          downloadLink.href = url;
-          downloadLink.download = 'rendered_animation.webm';
-          downloadLink.textContent = 'Download Video';
-          downloadLink.style.display = 'inline';
-
-          msg.textContent = 'Video rendered!';
-          renderVideoBtn.disabled = false;
-        };
-
-        mediaRecorder.start();
-
-        // Render exactly totalFrames frames
-        for(let frame = 0; frame < totalFrames; frame++) {
-          const t = frameToTime(frame);
-          video.currentTime = t;
-
-          ctx.clearRect(0,0,canvas.width,canvas.height);
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-          const hull = buildHullFaces(points);
-          const poly = sliceHullAtFrame(points, hull, frame);
-
-          // Render hull slice based on type
-          if (poly.length >= 3){
-            // Polygon (3D or 2D hull)
-            ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
-            ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle='#67e8f9'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
-          } else if (poly.length === 2){
-            // Line segment (2D hull edge or 1D hull)
-            ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y); ctx.lineTo(poly[1].x, poly[1].y);
-            ctx.strokeStyle='#67e8f9'; ctx.lineWidth=3; ctx.stroke();
-          } else if (poly.length === 1){
-            // Single point (1D hull intersection)
-            ctx.beginPath(); ctx.arc(poly[0].x, poly[0].y, 6, 0, 2*Math.PI);
-            ctx.fillStyle='#67e8f9'; ctx.fill();
-          }
-
-          for(const p of points){ const near=frame===p.z; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
-
-          // Manually capture this frame
-          const track = stream.getVideoTracks()[0];
-          track.requestFrame();
-
-          msg.textContent = `Rendering frame ${frame+1}/${totalFrames}`;
-          await new Promise(resolve => setTimeout(resolve, 10)); // Small delay for frame capture
-        }
-
-        mediaRecorder.stop();
       } catch(e) {
-        msg.textContent = 'Error rendering video: ' + e.message;
+        msg.textContent = 'Error rendering videos: ' + e.message;
+      } finally {
         renderVideoBtn.disabled = false;
       }
     });
