@@ -194,7 +194,7 @@
       renderVideoBtn.disabled = true;
 
       try {
-        const stream = canvas.captureStream(fps);
+        const stream = canvas.captureStream(0); // 0 = manual frame capture
         const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
         const chunks = [];
 
@@ -217,10 +217,29 @@
 
         mediaRecorder.start();
 
-        // Render all frames
+        // Render exactly totalFrames frames
         for(let frame = 0; frame < totalFrames; frame++) {
-          await renderFrame(frame);
-          await new Promise(resolve => setTimeout(resolve, 1000/fps));
+          const t = frameToTime(frame);
+          video.currentTime = t;
+
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          const faces = buildHullFaces(points);
+          const poly = sliceFacesAtFrame(points, faces, frame);
+          if (poly.length >= 3){
+            ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
+            ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle='#67e8f9'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
+          }
+
+          for(const p of points){ const near=frame===p.z; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
+
+          // Manually capture this frame
+          const track = stream.getVideoTracks()[0];
+          track.requestFrame();
+
+          msg.textContent = `Rendering frame ${frame+1}/${totalFrames}`;
+          await new Promise(resolve => setTimeout(resolve, 10)); // Small delay for frame capture
         }
 
         mediaRecorder.stop();
