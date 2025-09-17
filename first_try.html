@@ -66,6 +66,12 @@
       return verts;
     }
 
+    // ===== MP4 Frame Counter =====
+    const find=(v,atom,start=0)=>{for(let i=start;i<v.byteLength-8;i++)if(v.getUint32(i+4)==atom)return i;return-1}
+    const hasVideo=(v,start)=>{for(let i=start;i<v.byteLength-20;i++)if(v.getUint32(i)==0x68646c72&&v.getUint32(i+12)==0x76696465)return 1}
+    const getFrames=(v,start)=>{for(let i=start;i<v.byteLength-20;i++)if(v.getUint32(i)==0x7374737a)return v.getUint32(i+12)}
+    async function parseMP4Frames(file){const v=new DataView(await file.arrayBuffer());const m=find(v,0x6d6f6f76);return m>-1&&hasVideo(v,m)?getFrames(v,m):0}
+
     // ===== App state =====
     const file = document.getElementById('file');
     const fpsInput = document.getElementById('fps');
@@ -80,7 +86,7 @@
     let points=[];     // {x,y,t}
     let faces=[];      // hull faces
     let fps=30;        // user-defined fps for snapping
-    let totalFrames=0; // computed from duration * fps
+    let totalFrames=0; // actual frame count from MP4 metadata
 
     function updateFrameBox(){
       const f = Math.max(0, Math.min(totalFrames-1, currentFrameIndex()));
@@ -113,12 +119,17 @@
     }
 
     // ===== Event wiring =====
-    file.addEventListener('change', e=>{
+    file.addEventListener('change', async e=>{
       const f=e.target.files[0]; if(!f) return; try{ if(video.src && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);}catch{}
+
+      // Get actual frame count from MP4 metadata
+      totalFrames = Math.max(1, await parseMP4Frames(f));
+
       const url=URL.createObjectURL(f); video.src=url; video.load();
       video.addEventListener('loadeddata', ()=>{
         canvas.width = video.videoWidth||640; canvas.height = video.videoHeight||360;
-        totalFrames = Math.max(1, Math.round((isFinite(video.duration)?video.duration:0)*fps));
+        fps = totalFrames / (video.duration || 1); // Calculate actual FPS
+        fpsInput.value = Math.round(fps);
         scrubber.min = 0; scrubber.max = Math.max(0,totalFrames-1); scrubber.step = 1; scrubber.value = 0;
         video.muted = true; video.play().then(()=>video.pause()).catch(()=>{});
         video.currentTime = 0; updateFrameBox(); draw();
@@ -138,11 +149,11 @@
     // Slider snapping to frames
     scrubber.addEventListener('input', e=>{ const fi = parseInt(e.target.value,10)||0; snapAndSeek(fi); });
 
-    // FPS change re-computes frame count + relabels UI without losing current time
+    // FPS change updates UI scaling (totalFrames stays from MP4 metadata)
     fpsInput.addEventListener('change', ()=>{
       const newFps = Math.max(1, Math.min(120, parseInt(fpsInput.value,10)||30));
-      const t = video.currentTime||0; fps = newFps; totalFrames = Math.max(1, Math.round((isFinite(video.duration)?video.duration:0)*fps));
-      scrubber.max = Math.max(0,totalFrames-1); snapAndSeek(Math.round(t*fps));
+      const t = video.currentTime||0; fps = newFps;
+      snapAndSeek(Math.round(t*fps));
     });
 
     // Click to add point at snapped frame time
