@@ -820,12 +820,15 @@
             colorInput.value = hull.color;
             colorInput.className = 'simple-color-picker';
 
-            // Position next to the button
-            const buttonRect = colorBtn.getBoundingClientRect();
-            colorInput.style.left = (buttonRect.right + window.scrollX + 5) + 'px';
-            colorInput.style.top = (buttonRect.top + window.scrollY) + 'px';
+            // Append to hull panel and position relative to it
+            const hullPanel = document.getElementById('hullPanel');
+            hullPanel.appendChild(colorInput);
 
-            document.body.appendChild(colorInput);
+            // Position relative to hull panel
+            const hullPanelRect = hullPanel.getBoundingClientRect();
+            const buttonRect = colorBtn.getBoundingClientRect();
+            colorInput.style.left = (buttonRect.right - hullPanelRect.left + 5) + 'px';
+            colorInput.style.top = (buttonRect.top - hullPanelRect.top) + 'px';
 
             // Real-time color updates
             colorInput.addEventListener('input', (event) => {
