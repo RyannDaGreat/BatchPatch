@@ -4,14 +4,24 @@
   <meta charset="utf-8" />
   <title>Spacetime Hull — Snappy UI (Offline)</title>
   <style>
+    @font-face {
+      font-family: 'Futura';
+      src: url('https://github.com/RyannDaGreat/Images/raw/refs/heads/master/fonts/Futura.ttc') format('truetype-collection');
+      font-weight: normal;
+      font-style: normal;
+    }
     :root{ --bg:#0b0d12; --fg:#e8eef5; --muted:#a7b3c2; --line:#1e2937; --accent:#67e8f9; }
     *{box-sizing:border-box}
-    body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.35 Futura,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
     header { display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
     label { display:flex; align-items:center; gap:6px; color:var(--muted); }
     input[type="range"]{ width:360px; }
     input[type="number"]{ width:72px; padding:6px 8px; background:#0e1520; border:1px solid var(--line); color:var(--fg); border-radius:8px; }
-    input[type="file"], button{ padding:6px 10px; background:#0e1520; border:1px solid var(--line); color:var(--fg); border-radius:8px; cursor:pointer; }
+    button, select{ padding:6px 10px; background:#0e1520; border:1px solid var(--line); color:var(--fg); border-radius:8px; cursor:pointer; }
+    select option{ background:#0e1520; color:var(--fg); }
+    input[type="file"]{ display:none; }
+    .file-button{ padding:6px 10px; background:#0e1520; border:1px solid var(--line); color:var(--fg); border-radius:8px; cursor:pointer; display:inline-block; }
+    .file-button:hover{ outline:1px solid #243041 }
     button:hover{ outline:1px solid #243041 }
     #frameBox{ padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#0e1520; font-variant-numeric:tabular-nums; }
     #msg{ color:#ff7b7b; font-size:12px; margin-left:auto; }
@@ -22,12 +32,20 @@
 <body>
   <header>
     <input id="file" type="file" accept="video/*" />
+    <label for="file" class="file-button">Choose Video</label>
     <label>FPS <input id="fps" type="number" min="1" max="120" step="1" value="30"></label>
     <button id="playPause">▶</button>
     <input id="scrubber" type="range" min="0" max="0" step="1" value="0" />
     <span id="frameBox">Frame 0/0 · 0.00s</span>
     <button id="clear">Clear Points</button>
     <button id="renderVideo">Render 3 Videos</button>
+    <label style="margin-left:20px;">Preview:
+      <select id="previewMode">
+        <option value="gui">GUI</option>
+        <option value="gray">Gray</option>
+        <option value="mask">Mask</option>
+      </select>
+    </label>
     <span id="msg"></span>
   </header>
   <main style="display:flex; gap:20px;">
@@ -42,18 +60,18 @@
     </div>
   </main>
   <div id="outputContainer" style="display:none; margin-top:20px;">
-    <h3>Rendered Videos:</h3>
+    <hr style="border:none; border-top:1px solid var(--line); margin:20px 0;">
     <div style="display:flex; gap:20px; width:100%;">
       <div style="flex:1;">
-        <h4>Video + Hull + Points</h4>
+        <h4>GUI Video</h4>
         <video id="outputVideo1" controls autoplay loop muted style="width:100%;"></video>
       </div>
       <div style="flex:1;">
-        <h4>Video + Gray Hull</h4>
+        <h4>Gray Video</h4>
         <video id="outputVideo2" controls autoplay loop muted style="width:100%;"></video>
       </div>
       <div style="flex:1;">
-        <h4>Black + White Hull</h4>
+        <h4>Mask Video</h4>
         <video id="outputVideo3" controls autoplay loop muted style="width:100%;"></video>
       </div>
     </div>
@@ -250,6 +268,7 @@
     const clearBtn = document.getElementById('clear');
     const addHullBtn = document.getElementById('addHull');
     const hullList = document.getElementById('hullList');
+    const previewMode = document.getElementById('previewMode');
     const renderVideoBtn = document.getElementById('renderVideo');
     const msg = document.getElementById('msg');
     const canvas = document.getElementById('canvas');
@@ -260,9 +279,10 @@
     const outputVideo2 = document.getElementById('outputVideo2');
     const outputVideo3 = document.getElementById('outputVideo3');
 
-    let hulls = [{id: 0, name: 'Hull 1', points: [], color: '#67e8f9'}];
+    let hulls = [{id: 0, name: 'Hull 1', points: [], color: '#67e8f9', visible: true}];
     let selectedHullId = 0;
     let nextHullId = 1;
+    let currentPreviewMode = 'gui';
     let fps=30;        // only for video seeking
     let totalFrames=0; // actual frame count from MP4 metadata
     let isPlaying=false;
@@ -284,36 +304,78 @@
       }
 
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Render all hulls
+      // Background based on preview mode
+      if (currentPreviewMode === 'mask') {
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      } else if (video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
+
+      // Render all visible hulls
       for(const hullData of hulls){
+        if(!hullData.visible) continue; // Skip invisible hulls
+
         const isSelected = hullData.id === selectedHullId;
         const hull = buildHullFaces(hullData.points);
         const poly = sliceHullAtFrame(hullData.points, hull, clamped);
 
-        // Render hull slice
+        // Get colors with transparency for unselected hulls
+        function getHullColor(baseColor, opacity) {
+          const hex = baseColor.slice(1);
+          const r = parseInt(hex.slice(0, 2), 16);
+          const g = parseInt(hex.slice(2, 4), 16);
+          const b = parseInt(hex.slice(4, 6), 16);
+          return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+        }
+
+        // Render hull slice based on preview mode
         if (poly.length >= 3){
           ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
-          if(isSelected){
-            ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle=hullData.color; ctx.lineWidth=2;
-          } else {
-            ctx.fillStyle='rgba(100,100,200,0.2)'; ctx.strokeStyle='rgba(100,100,200,0.6)'; ctx.lineWidth=1;
+
+          if (currentPreviewMode === 'mask') {
+            ctx.fillStyle = 'white';
+            ctx.fill();
+          } else if (currentPreviewMode === 'gray') {
+            ctx.fillStyle = 'rgb(128,128,128)';
+            ctx.fill();
+          } else { // GUI mode
+            if(isSelected){
+              ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle=hullData.color; ctx.lineWidth=2;
+            } else {
+              ctx.fillStyle=getHullColor(hullData.color, 0.2); ctx.strokeStyle=getHullColor(hullData.color, 0.6); ctx.lineWidth=1;
+            }
+            ctx.fill(); ctx.stroke();
           }
-          ctx.fill(); ctx.stroke();
         } else if (poly.length === 2){
           ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y); ctx.lineTo(poly[1].x, poly[1].y);
-          ctx.strokeStyle = isSelected ? hullData.color : 'rgba(100,100,200,0.6)';
-          ctx.lineWidth = isSelected ? 3 : 2;
+
+          if (currentPreviewMode === 'mask') {
+            ctx.strokeStyle = 'white'; ctx.lineWidth = 3;
+          } else if (currentPreviewMode === 'gray') {
+            ctx.strokeStyle = 'rgb(128,128,128)'; ctx.lineWidth = 3;
+          } else { // GUI mode
+            ctx.strokeStyle = isSelected ? hullData.color : getHullColor(hullData.color, 0.6);
+            ctx.lineWidth = isSelected ? 3 : 2;
+          }
           ctx.stroke();
         } else if (poly.length === 1){
           ctx.beginPath(); ctx.arc(poly[0].x, poly[0].y, isSelected ? 6 : 4, 0, 2*Math.PI);
-          ctx.fillStyle = isSelected ? hullData.color : 'rgba(100,100,200,0.6)';
+
+          if (currentPreviewMode === 'mask') {
+            ctx.fillStyle = 'white';
+          } else if (currentPreviewMode === 'gray') {
+            ctx.fillStyle = 'rgb(128,128,128)';
+          } else { // GUI mode
+            ctx.fillStyle = isSelected ? hullData.color : getHullColor(hullData.color, 0.6);
+          }
           ctx.fill();
         }
 
-        // Only render points for selected hull
-        if(isSelected){
+        // Render points based on preview mode
+        if (currentPreviewMode === 'gui' && isSelected) {
+          // Only show points for selected hull in GUI mode
           for(let i=0; i<hullData.points.length; i++){
             const p = hullData.points[i];
             const near = clamped === p.z;
@@ -336,7 +398,19 @@
               ctx.stroke();
             }
           }
+        } else if (currentPreviewMode === 'mask') {
+          // Show all points as white dots in mask mode
+          for(let i=0; i<hullData.points.length; i++){
+            const p = hullData.points[i];
+            const near = clamped === p.z;
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, near ? 5 : 4, 0, 2*Math.PI);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+          }
         }
+        // Gray mode shows no points
       }
 
       currentFrame = clamped;
@@ -403,11 +477,16 @@
         name.textContent = hull.name;
         name.style.cssText = 'flex:1; font-size:12px;';
 
+        const eyeBtn = document.createElement('button');
+        eyeBtn.textContent = hull.visible ? '👁' : '👁‍🗨';
+        eyeBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(100,100,100,0.2); border-radius:2px; cursor:pointer;';
+
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = '🗑';
         deleteBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(255,100,100,0.2); border-radius:2px; cursor:pointer;';
 
         item.appendChild(name);
+        item.appendChild(eyeBtn);
         if(hulls.length > 1) item.appendChild(deleteBtn); // Don't allow deleting last hull
 
         item.addEventListener('click', e => {
@@ -418,6 +497,10 @@
               renderHullList();
               updateDisplay();
             }
+          } else if(e.target === eyeBtn) {
+            hull.visible = !hull.visible;
+            renderHullList();
+            updateDisplay();
           } else {
             selectedHullId = hull.id;
             renderHullList();
@@ -431,8 +514,12 @@
 
     // Click to add point at current frame
     canvas.addEventListener('click', e=>{
-      if (!isFinite(video.duration)) return; const r=canvas.getBoundingClientRect();
-      const x=e.clientX-r.left, y=e.clientY-r.top;
+      if (!isFinite(video.duration)) return;
+      const r=canvas.getBoundingClientRect();
+      const scaleX = canvas.width / r.width;
+      const scaleY = canvas.height / r.height;
+      const x=(e.clientX-r.left) * scaleX;
+      const y=(e.clientY-r.top) * scaleY;
       const selectedHull = getSelectedHull();
       selectedHull.points.push({x,y,z:currentFrame});
       updateDisplay();
@@ -442,7 +529,10 @@
     canvas.addEventListener('contextmenu', e=>{
       e.preventDefault();
       const r=canvas.getBoundingClientRect();
-      const x=e.clientX-r.left, y=e.clientY-r.top;
+      const scaleX = canvas.width / r.width;
+      const scaleY = canvas.height / r.height;
+      const x=(e.clientX-r.left) * scaleX;
+      const y=(e.clientY-r.top) * scaleY;
       const selectedHull = getSelectedHull();
 
       // Find closest point within threshold
@@ -474,11 +564,18 @@
         id: nextHullId++,
         name: `Hull ${nextHullId}`,
         points: [],
-        color: ['#67e8f9', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#fef160'][hulls.length % 6]
+        color: ['#67e8f9', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#fef160'][hulls.length % 6],
+        visible: true
       };
       hulls.push(newHull);
       selectedHullId = newHull.id;
       renderHullList();
+      updateDisplay();
+    });
+
+    // Preview mode change
+    previewMode.addEventListener('change', ()=>{
+      currentPreviewMode = previewMode.value;
       updateDisplay();
     });
 
@@ -573,8 +670,10 @@
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             }
 
-            // Render all hulls combined
+            // Render all visible hulls combined
             for(const hullData of hulls){
+              if(!hullData.visible) continue; // Skip invisible hulls
+
               const hull = buildHullFaces(hullData.points);
               const poly = sliceHullAtFrame(hullData.points, hull, frame);
 
