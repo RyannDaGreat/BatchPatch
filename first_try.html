@@ -60,8 +60,8 @@
     function norm2(a){ return dot(a,a); }
     function buildHullFaces(pts){
       const n=pts.length, EPS=1e-6;
-      if(n<2) return {faces:[], edges:[], type:'empty'};
-      if(n<3) return {faces:[], edges:[[0,1]], type:'1d'};
+      if(n<2) return {faces:[], edges:[], type:'empty', surfacePoints: new Set()};
+      if(n<3) return {faces:[], edges:[[0,1]], type:'1d', surfacePoints: new Set([0,1])};
 
       // Try 3D hull first
       const faces=[], seen=new Set();
@@ -73,7 +73,16 @@
         if(pos&&neg) continue; if(onPlane===n-3) continue; const key=[i,j,k].sort((x,y)=>x-y).join(',');
         if(!seen.has(key)){ seen.add(key); faces.push([i,j,k]); }
       }
-      if(faces.length>0) return {faces, edges:[], type:'3d'};
+      if(faces.length>0) {
+        // Determine surface points (used in hull faces)
+        const surfacePoints = new Set();
+        for(const face of faces){
+          surfacePoints.add(face[0]);
+          surfacePoints.add(face[1]);
+          surfacePoints.add(face[2]);
+        }
+        return {faces, edges:[], type:'3d', surfacePoints};
+      }
 
       // Check if points are collinear (1D manifold)
       if(n>=3){
@@ -88,7 +97,8 @@
           // Find extreme points along the line
           const dots = pts.map((p,i) => ({i, dot: dot(sub(p,pts[0]), dir1)}));
           dots.sort((a,b) => a.dot - b.dot);
-          return {faces:[], edges:[[dots[0].i, dots[dots.length-1].i]], type:'1d'};
+          const surfacePoints = new Set([dots[0].i, dots[dots.length-1].i]);
+          return {faces:[], edges:[[dots[0].i, dots[dots.length-1].i]], type:'1d', surfacePoints};
         }
       }
 
@@ -99,7 +109,7 @@
         const nrm = cross(sub(pts[j],pts[i]), sub(pts[k],pts[i]));
         if(norm2(nrm) > EPS) normal = nrm;
       }
-      if(!normal) return {faces:[], edges:[], type:'empty'};
+      if(!normal) return {faces:[], edges:[], type:'empty', surfacePoints: new Set()};
 
       // Project to 2D plane and compute convex hull
       const basis1 = Math.abs(normal.x) < 0.9 ? {x:1,y:0,z:0} : {x:0,y:1,z:0};
@@ -110,8 +120,9 @@
       const pts2d = pts.map(p => ({x:dot(p,uNorm), y:dot(p,v), i:pts.indexOf(p)}));
       const hull2d = convexHull2D(pts2d);
       const edges = hull2d.map((idx,i) => [hull2d[i], hull2d[(i+1)%hull2d.length]]);
+      const surfacePoints = new Set(hull2d);
 
-      return {faces:[], edges, type:'2d'};
+      return {faces:[], edges, type:'2d', surfacePoints};
     }
 
     function convexHull2D(pts){
@@ -282,7 +293,29 @@
         ctx.fillStyle='#67e8f9'; ctx.fill();
       }
 
-      for(const p of points){ const near=clamped===p.z; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
+      // Render points with hull classification
+      for(let i=0; i<points.length; i++){
+        const p = points[i];
+        const near = clamped === p.z;
+        const onSurface = hull.surfacePoints && hull.surfacePoints.has(i);
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, near ? 5 : 4, 0, 2*Math.PI);
+
+        if(onSurface){
+          ctx.fillStyle = '#fff'; // Surface points are white
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = near ? '#00ffa6' : '#000';
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = near ? '#ffaa00' : '#888'; // Interior points are orange/gray
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = '#444';
+          ctx.stroke();
+        }
+      }
 
       currentFrame = clamped;
       scrubber.value = String(clamped);
@@ -337,6 +370,29 @@
       if (!isFinite(video.duration)) return; const r=canvas.getBoundingClientRect();
       const x=e.clientX-r.left, y=e.clientY-r.top; points.push({x,y,z:currentFrame});
       updateDisplay();
+    });
+
+    // Right-click to delete point
+    canvas.addEventListener('contextmenu', e=>{
+      e.preventDefault();
+      const r=canvas.getBoundingClientRect();
+      const x=e.clientX-r.left, y=e.clientY-r.top;
+
+      // Find closest point within threshold
+      let closestIndex = -1;
+      let closestDist = 15; // pixel threshold
+      for(let i=0; i<points.length; i++){
+        const dist = Math.hypot(points[i].x - x, points[i].y - y);
+        if(dist < closestDist){
+          closestDist = dist;
+          closestIndex = i;
+        }
+      }
+
+      if(closestIndex >= 0){
+        points.splice(closestIndex, 1);
+        updateDisplay();
+      }
     });
 
     clearBtn.addEventListener('click', ()=>{ points=[]; msg.textContent=''; renderFrame(currentFrame); });
@@ -436,15 +492,27 @@
 
             // Render points only for videoTransparent mode
             if (mode === 'videoTransparent') {
-              for(const p of points){
-                const near=frame===p.z;
+              for(let i=0; i<points.length; i++){
+                const p = points[i];
+                const near = frame === p.z;
+                const onSurface = hull.surfacePoints && hull.surfacePoints.has(i);
+
                 ctx.beginPath();
-                ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI);
-                ctx.fillStyle='#fff';
-                ctx.fill();
-                ctx.lineWidth=2;
-                ctx.strokeStyle=near?'#00ffa6':'#000';
-                ctx.stroke();
+                ctx.arc(p.x, p.y, near ? 5 : 4, 0, 2*Math.PI);
+
+                if(onSurface){
+                  ctx.fillStyle = '#fff';
+                  ctx.fill();
+                  ctx.lineWidth = 2;
+                  ctx.strokeStyle = near ? '#00ffa6' : '#000';
+                  ctx.stroke();
+                } else {
+                  ctx.fillStyle = near ? '#ffaa00' : '#888';
+                  ctx.fill();
+                  ctx.lineWidth = 1;
+                  ctx.strokeStyle = '#444';
+                  ctx.stroke();
+                }
               }
             }
 
