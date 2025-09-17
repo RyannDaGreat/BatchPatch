@@ -397,7 +397,8 @@
     }
 
     async function renderSingleVideo(mode) {
-      const stream = canvas.captureStream(0);
+      const outputFPS = parseInt(fpsInput.value);
+      const stream = canvas.captureStream(outputFPS);
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'video/webm;codecs=vp9',
         videoBitsPerSecond: 50000000
@@ -451,7 +452,7 @@
             track.requestFrame();
 
             msg.textContent = `Rendering ${mode} ${frame+1}/${totalFrames}`;
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise(resolve => setTimeout(resolve, 1000/outputFPS));
           }
 
           mediaRecorder.stop();
