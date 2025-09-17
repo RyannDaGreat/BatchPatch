@@ -88,41 +88,38 @@
     let fps=30;        // user-defined fps for snapping
     let totalFrames=0; // actual frame count from MP4 metadata
 
-    function updateFrameBox(){
-      const f = Math.max(0, Math.min(totalFrames-1, currentFrameIndex()));
-      frameBox.textContent = `Frame ${f}/${Math.max(totalFrames-1,0)} · ${video.currentTime.toFixed(2)}s`;
-    }
-
-    function currentFrameIndex(){ return Math.round((video.currentTime||0) * fps); }
     function frameToTime(fi){ return fi / fps; }
 
+    let currentFrame = 0;
     let seekResolve;
     video.addEventListener('seeked', ()=>{ if(seekResolve) seekResolve(); });
 
-    async function snapAndSeek(fi){
+    async function renderFrame(fi){
       const clamped = Math.max(0, Math.min(totalFrames-1, fi|0));
       const t = frameToTime(clamped);
+
       if (isFinite(video.duration)) {
         video.currentTime = t;
         await new Promise(r => seekResolve = r);
       }
-      scrubber.value = String(clamped);
-      updateFrameBox();
-      draw();
-    }
 
-    function recomputeHull(){ faces = buildHullFaces(points); msg.textContent = (points.length && faces.length===0)?'Need ≥4 points across different times for a 3D hull.':''; }
-
-    function draw(){
       ctx.clearRect(0,0,canvas.width,canvas.height);
       if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const poly = sliceFacesAtTime(points, faces, video.currentTime||0);
+
+      const poly = sliceFacesAtTime(points, faces, t);
       if (poly.length >= 3){
         ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
         ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle='#67e8f9'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
       }
-      const NEAR=0.05; for(const p of points){ const near=Math.abs((video.currentTime||0)-p.t)<NEAR; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
+
+      const NEAR=0.05; for(const p of points){ const near=Math.abs(t-p.t)<NEAR; ctx.beginPath(); ctx.arc(p.x,p.y, near?5:4,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=near?'#00ffa6':'#000'; ctx.stroke(); }
+
+      currentFrame = clamped;
+      scrubber.value = String(clamped);
+      frameBox.textContent = `Frame ${clamped}/${Math.max(totalFrames-1,0)} · ${t.toFixed(2)}s`;
     }
+
+    function recomputeHull(){ faces = buildHullFaces(points); msg.textContent = (points.length && faces.length===0)?'Need ≥4 points across different times for a 3D hull.':''; renderFrame(currentFrame); }
 
     // ===== Event wiring =====
     file.addEventListener('change', async e=>{
@@ -138,42 +135,30 @@
         fpsInput.value = Math.round(fps);
         scrubber.min = 0; scrubber.max = Math.max(0,totalFrames-1); scrubber.step = 1; scrubber.value = 0;
         video.muted = true; video.play().then(()=>video.pause()).catch(()=>{});
-        video.currentTime = 0; updateFrameBox(); draw();
+        renderFrame(0);
       }, { once:true });
       video.addEventListener('error', ()=>{ msg.textContent='Unable to decode this file in this browser.'; }, { once:true });
     });
 
-    // Use requestVideoFrameCallback when available for perfect sync
-    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype){
-      const pump = ()=> video.requestVideoFrameCallback(()=>{ updateFrameBox(); draw(); pump(); }); pump();
-    } else {
-      // Fallback: timeupdate + RAF for responsive UI
-      video.addEventListener('timeupdate', ()=>{ updateFrameBox(); draw(); });
-      (function raf(){ draw(); requestAnimationFrame(raf); })();
-    }
-
     // Slider snapping to frames
-    scrubber.addEventListener('input', e=>{ const fi = parseInt(e.target.value,10)||0; snapAndSeek(fi); });
+    scrubber.addEventListener('input', e=>{ const fi = parseInt(e.target.value,10)||0; renderFrame(fi); });
 
     // FPS change updates UI scaling (totalFrames stays from MP4 metadata)
     fpsInput.addEventListener('change', ()=>{
       const newFps = Math.max(1, Math.min(120, parseInt(fpsInput.value,10)||30));
-      const t = video.currentTime||0; fps = newFps;
-      snapAndSeek(Math.round(t*fps));
+      fps = newFps;
+      renderFrame(currentFrame);
     });
 
     // Click to add point at snapped frame time
     canvas.addEventListener('click', e=>{
       if (!isFinite(video.duration)) return; const r=canvas.getBoundingClientRect();
-      const fi = currentFrameIndex(); const t = frameToTime(fi);
+      const t = frameToTime(currentFrame);
       const x=e.clientX-r.left, y=e.clientY-r.top; points.push({x,y,t});
-      recomputeHull(); draw();
+      recomputeHull();
     });
 
-    clearBtn.addEventListener('click', ()=>{ points=[]; faces=[]; msg.textContent=''; draw(); });
-
-    // Initial paint
-    draw(); updateFrameBox();
+    clearBtn.addEventListener('click', ()=>{ points=[]; faces=[]; msg.textContent=''; renderFrame(currentFrame); });
   </script>
 </body>
 </html>
