@@ -249,6 +249,41 @@
       font-size: 16px;
       line-height: 1.4;
     }
+    .bounds-slider {
+      position: relative;
+      width: 100%;
+      height: 4px;
+      margin: 4px 0 0 0;
+    }
+    .bounds-track {
+      position: absolute;
+      width: 100%;
+      height: 4px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 2px;
+      top: 0;
+    }
+    .bounds-fill {
+      position: absolute;
+      height: 4px;
+      background: rgba(255,255,255,0.4);
+      border-radius: 2px;
+      top: 0;
+    }
+    .bounds-thumb {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      background: rgba(255,255,255,0.8);
+      border-radius: 50%;
+      top: -4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .bounds-thumb:hover {
+      background: rgba(255,255,255,1);
+      transform: scale(1.1);
+    }
   </style>
 </head>
 <body>
@@ -257,7 +292,15 @@
     <label for="file" class="file-button">Choose Video</label>
     <label>FPS <input id="fps" type="number" min="1" max="120" step="1" value="30"></label>
     <button id="playPause">▶</button>
-    <input id="scrubber" type="range" min="0" max="0" step="1" value="0" />
+    <div style="display: flex; flex-direction: column; gap: 2px;">
+      <input id="scrubber" type="range" min="0" max="0" step="1" value="0" />
+      <div class="bounds-slider">
+        <div class="bounds-track"></div>
+        <div id="rangeFill" class="bounds-fill"></div>
+        <div id="startThumb" class="bounds-thumb"></div>
+        <div id="endThumb" class="bounds-thumb"></div>
+      </div>
+    </div>
     <span id="frameBox">Frame 0/0 · 0.00s</span>
     <button id="clear">Clear Points</button>
     <button id="renderVideo">Render 3 Videos</button>
@@ -505,6 +548,9 @@
     const outputVideo2 = document.getElementById('outputVideo2');
     const outputVideo3 = document.getElementById('outputVideo3');
     const videoOverlay = document.getElementById('videoOverlay');
+    const startThumb = document.getElementById('startThumb');
+    const endThumb = document.getElementById('endThumb');
+    const rangeFill = document.getElementById('rangeFill');
 
     let hulls = [{id: 0, name: 'Hull 1', points: [], color: '#67e8f9', visible: true}];
     let selectedHullId = 0;
@@ -517,6 +563,13 @@
     let isDragging = false;
     let dragPointIndex = -1;
     let dragHullId = -1;
+    let startFrame = 0;
+    let endFrame = 0;
+    let boundingRect = {x: 0, y: 0, width: 0, height: 0};
+    let isDraggingRange = false;
+    let isDraggingBounds = false;
+    let dragRangeType = ''; // 'start' or 'end'
+    let dragBoundsType = ''; // 'corner', 'edge-top', etc.
 
     function frameToTime(fi){ return fi / fps; }
 
@@ -661,9 +714,32 @@
         // Gray mode shows no points
       }
 
+      // Draw bounding box in GUI mode only when within time range
+      if (currentPreviewMode === 'gui' && totalFrames > 0 &&
+          clamped >= startFrame && clamped <= endFrame) {
+        drawBoundingBox();
+      }
+
       currentFrame = clamped;
       scrubber.value = String(clamped);
       frameBox.textContent = `Frame ${clamped+1}/${totalFrames} · ${t.toFixed(2)}s`;
+    }
+
+    function drawBoundingBox() {
+      ctx.save();
+      ctx.lineWidth = 3;
+      ctx.setLineDash([12, 6]);
+
+      // Draw white dashed line first
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+
+      // Offset the dash pattern and draw black dashed line
+      ctx.lineDashOffset = 9;
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+
+      ctx.restore();
     }
 
     function getSelectedHull(){
@@ -705,11 +781,31 @@
       if(totalFrames > 0 && isFinite(video.duration)){
         videoOverlay.style.display = 'none';
         fileButton.classList.remove('pulse');
+        initializeBounds();
       } else {
         videoOverlay.style.display = 'block';
         fileButton.classList.add('pulse');
       }
     }
+
+    function initializeBounds(){
+      startFrame = 0;
+      endFrame = totalFrames - 1;
+      boundingRect = {x: 0, y: 0, width: canvas.width, height: canvas.height};
+      updateRangeSlider();
+    }
+
+    function updateRangeSlider(){
+      if(totalFrames <= 1) return;
+      const startPercent = (startFrame / (totalFrames - 1)) * 100;
+      const endPercent = (endFrame / (totalFrames - 1)) * 100;
+
+      startThumb.style.left = startPercent + '%';
+      endThumb.style.left = endPercent + '%';
+      rangeFill.style.left = startPercent + '%';
+      rangeFill.style.width = (endPercent - startPercent) + '%';
+    }
+
 
     function updateDisplay(){
       const selectedHull = getSelectedHull();
@@ -870,13 +966,55 @@
       });
     }
 
+    function isClickingBoundingEdge(x, y) {
+      if(currentPreviewMode !== 'gui' || totalFrames <= 0) return false;
+      if(currentFrame < startFrame || currentFrame > endFrame) return false;
+
+      const threshold = 8; // Distance from edge to be considered "on" the edge
+
+      // Check top edge
+      if(Math.abs(y - boundingRect.y) <= threshold &&
+         x >= boundingRect.x && x <= boundingRect.x + boundingRect.width) {
+        return 'edge-top';
+      }
+
+      // Check bottom edge
+      if(Math.abs(y - (boundingRect.y + boundingRect.height)) <= threshold &&
+         x >= boundingRect.x && x <= boundingRect.x + boundingRect.width) {
+        return 'edge-bottom';
+      }
+
+      // Check left edge
+      if(Math.abs(x - boundingRect.x) <= threshold &&
+         y >= boundingRect.y && y <= boundingRect.y + boundingRect.height) {
+        return 'edge-left';
+      }
+
+      // Check right edge
+      if(Math.abs(x - (boundingRect.x + boundingRect.width)) <= threshold &&
+         y >= boundingRect.y && y <= boundingRect.y + boundingRect.height) {
+        return 'edge-right';
+      }
+
+      return false;
+    }
+
     // Mouse down - start dragging or add point
     canvas.addEventListener('mousedown', e=>{
       if (!isFinite(video.duration)) return;
 
       const coords = getCanvasCoords(e);
-      const closest = findClosestPoint(coords.x, coords.y);
 
+      // Check if clicking on bounding box edge
+      const edgeType = isClickingBoundingEdge(coords.x, coords.y);
+      if(edgeType) {
+        isDraggingBounds = true;
+        dragBoundsType = edgeType;
+        e.preventDefault();
+        return;
+      }
+
+      const closest = findClosestPoint(coords.x, coords.y);
       if(closest && currentPreviewMode === 'gui'){
         // Start dragging existing point
         isDragging = true;
@@ -888,19 +1026,48 @@
       }
     });
 
-    // Mouse move - drag point
+    // Mouse move - drag point or bounding box
     canvas.addEventListener('mousemove', e=>{
+      const coords = getCanvasCoords(e);
+
+      if(isDraggingBounds) {
+        // Handle bounding box dragging
+        const minX = 0, minY = 0;
+        const maxX = canvas.width, maxY = canvas.height;
+
+        if(dragBoundsType === 'edge-top') {
+          const newHeight = boundingRect.height + (boundingRect.y - Math.max(minY, coords.y));
+          boundingRect.y = Math.max(minY, coords.y);
+          boundingRect.height = Math.max(20, newHeight);
+        } else if(dragBoundsType === 'edge-bottom') {
+          boundingRect.height = Math.max(20, Math.min(maxY - boundingRect.y, coords.y - boundingRect.y));
+        } else if(dragBoundsType === 'edge-left') {
+          const newWidth = boundingRect.width + (boundingRect.x - Math.max(minX, coords.x));
+          boundingRect.x = Math.max(minX, coords.x);
+          boundingRect.width = Math.max(20, newWidth);
+        } else if(dragBoundsType === 'edge-right') {
+          boundingRect.width = Math.max(20, Math.min(maxX - boundingRect.x, coords.x - boundingRect.x));
+        }
+
+        updateDisplay();
+        return;
+      }
+
       if(!isDragging) {
-        // Update cursor when hovering over points
+        // Update cursor when hovering over edges or points
         if(currentPreviewMode === 'gui' && isFinite(video.duration)){
-          const coords = getCanvasCoords(e);
-          const closest = findClosestPoint(coords.x, coords.y);
-          canvas.style.cursor = closest ? 'grab' : 'crosshair';
+          const edgeType = isClickingBoundingEdge(coords.x, coords.y);
+          if(edgeType) {
+            if(edgeType === 'edge-top' || edgeType === 'edge-bottom') canvas.style.cursor = 'ns-resize';
+            else if(edgeType === 'edge-left' || edgeType === 'edge-right') canvas.style.cursor = 'ew-resize';
+          } else {
+            const closest = findClosestPoint(coords.x, coords.y);
+            canvas.style.cursor = closest ? 'grab' : 'crosshair';
+          }
         }
         return;
       }
 
-      const coords = getCanvasCoords(e);
       const hull = hulls.find(h => h.id === dragHullId);
       if(hull && hull.points[dragPointIndex]){
         hull.points[dragPointIndex].x = coords.x;
@@ -916,11 +1083,16 @@
         dragPointIndex = -1;
         dragHullId = -1;
         canvas.style.cursor = 'crosshair';
-      } else if(!isDragging && isFinite(video.duration)){
-        // Add new point if we weren't dragging
+      } else if(isDraggingBounds){
+        isDraggingBounds = false;
+        dragBoundsType = '';
+        canvas.style.cursor = 'crosshair';
+      } else if(!isDragging && !isDraggingBounds && isFinite(video.duration)){
+        // Add new point if we weren't dragging anything
         const coords = getCanvasCoords(e);
         const closest = findClosestPoint(coords.x, coords.y);
-        if(!closest){ // Only add if not clicking on existing point
+        const edgeType = isClickingBoundingEdge(coords.x, coords.y);
+        if(!closest && !edgeType){ // Only add if not clicking on existing point or edge
           const selectedHull = getSelectedHull();
           selectedHull.points.push({x: coords.x, y: coords.y, z: currentFrame});
           updateDisplay();
@@ -981,6 +1153,42 @@
       currentPreviewMode = previewMode.value;
       updateDisplay();
     });
+
+    // Range slider event handlers
+    startThumb.addEventListener('mousedown', (e) => {
+      isDraggingRange = true;
+      dragRangeType = 'start';
+      e.preventDefault();
+    });
+
+    endThumb.addEventListener('mousedown', (e) => {
+      isDraggingRange = true;
+      dragRangeType = 'end';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if(isDraggingRange) {
+        const rangeContainer = startThumb.parentElement;
+        const rect = rangeContainer.getBoundingClientRect();
+        const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+        const frame = Math.round((percent / 100) * (totalFrames - 1));
+
+        if(dragRangeType === 'start') {
+          startFrame = Math.min(frame, endFrame);
+        } else {
+          endFrame = Math.max(frame, startFrame);
+        }
+
+        updateRangeSlider();
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      isDraggingRange = false;
+      dragRangeType = '';
+    });
+
 
     // Initialize hull list and video overlay
     renderHullList();
