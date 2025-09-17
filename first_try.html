@@ -30,9 +30,16 @@
     <button id="renderVideo">Render 3 Videos</button>
     <span id="msg"></span>
   </header>
-  <main>
-    <canvas id="canvas"></canvas>
-    <video id="video" muted playsinline preload="auto" style="display:none"></video>
+  <main style="display:flex; gap:20px;">
+    <div style="flex:1;">
+      <canvas id="canvas"></canvas>
+      <video id="video" muted playsinline preload="auto" style="display:none"></video>
+    </div>
+    <div id="hullPanel" style="width:200px; padding:10px; border-left:1px solid var(--line);">
+      <h3 style="margin:0 0 10px 0; font-size:14px;">Hulls</h3>
+      <div id="hullList"></div>
+      <button id="addHull" style="width:100%; margin-top:10px;">+ Add Hull</button>
+    </div>
   </main>
   <div id="outputContainer" style="display:none; margin-top:20px;">
     <h3>Rendered Videos:</h3>
@@ -241,6 +248,8 @@
     const scrubber = document.getElementById('scrubber');
     const frameBox = document.getElementById('frameBox');
     const clearBtn = document.getElementById('clear');
+    const addHullBtn = document.getElementById('addHull');
+    const hullList = document.getElementById('hullList');
     const renderVideoBtn = document.getElementById('renderVideo');
     const msg = document.getElementById('msg');
     const canvas = document.getElementById('canvas');
@@ -251,7 +260,9 @@
     const outputVideo2 = document.getElementById('outputVideo2');
     const outputVideo3 = document.getElementById('outputVideo3');
 
-    let points=[];     // {x,y,z} where z=frame index
+    let hulls = [{id: 0, name: 'Hull 1', points: [], color: '#67e8f9'}];
+    let selectedHullId = 0;
+    let nextHullId = 1;
     let fps=30;        // only for video seeking
     let totalFrames=0; // actual frame count from MP4 metadata
     let isPlaying=false;
@@ -275,45 +286,56 @@
       ctx.clearRect(0,0,canvas.width,canvas.height);
       if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const hull = buildHullFaces(points);
-      const poly = sliceHullAtFrame(points, hull, clamped);
+      // Render all hulls
+      for(const hullData of hulls){
+        const isSelected = hullData.id === selectedHullId;
+        const hull = buildHullFaces(hullData.points);
+        const poly = sliceHullAtFrame(hullData.points, hull, clamped);
 
-      // Render hull slice based on type
-      if (poly.length >= 3){
-        // Polygon (3D or 2D hull)
-        ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
-        ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle='#67e8f9'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
-      } else if (poly.length === 2){
-        // Line segment (2D hull edge or 1D hull)
-        ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y); ctx.lineTo(poly[1].x, poly[1].y);
-        ctx.strokeStyle='#67e8f9'; ctx.lineWidth=3; ctx.stroke();
-      } else if (poly.length === 1){
-        // Single point (1D hull intersection)
-        ctx.beginPath(); ctx.arc(poly[0].x, poly[0].y, 6, 0, 2*Math.PI);
-        ctx.fillStyle='#67e8f9'; ctx.fill();
-      }
-
-      // Render points with hull classification
-      for(let i=0; i<points.length; i++){
-        const p = points[i];
-        const near = clamped === p.z;
-        const onSurface = hull.surfacePoints && hull.surfacePoints.has(i);
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, near ? 5 : 4, 0, 2*Math.PI);
-
-        if(onSurface){
-          ctx.fillStyle = '#fff'; // Surface points are white
-          ctx.fill();
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = near ? '#00ffa6' : '#000';
+        // Render hull slice
+        if (poly.length >= 3){
+          ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
+          if(isSelected){
+            ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.strokeStyle=hullData.color; ctx.lineWidth=2;
+          } else {
+            ctx.fillStyle='rgba(100,100,200,0.2)'; ctx.strokeStyle='rgba(100,100,200,0.6)'; ctx.lineWidth=1;
+          }
+          ctx.fill(); ctx.stroke();
+        } else if (poly.length === 2){
+          ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y); ctx.lineTo(poly[1].x, poly[1].y);
+          ctx.strokeStyle = isSelected ? hullData.color : 'rgba(100,100,200,0.6)';
+          ctx.lineWidth = isSelected ? 3 : 2;
           ctx.stroke();
-        } else {
-          ctx.fillStyle = near ? '#ffaa00' : '#888'; // Interior points are orange/gray
+        } else if (poly.length === 1){
+          ctx.beginPath(); ctx.arc(poly[0].x, poly[0].y, isSelected ? 6 : 4, 0, 2*Math.PI);
+          ctx.fillStyle = isSelected ? hullData.color : 'rgba(100,100,200,0.6)';
           ctx.fill();
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = '#444';
-          ctx.stroke();
+        }
+
+        // Only render points for selected hull
+        if(isSelected){
+          for(let i=0; i<hullData.points.length; i++){
+            const p = hullData.points[i];
+            const near = clamped === p.z;
+            const onSurface = hull.surfacePoints && hull.surfacePoints.has(i);
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, near ? 5 : 4, 0, 2*Math.PI);
+
+            if(onSurface){
+              ctx.fillStyle = '#fff';
+              ctx.fill();
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = near ? '#00ffa6' : '#000';
+              ctx.stroke();
+            } else {
+              ctx.fillStyle = near ? '#ffaa00' : '#888';
+              ctx.fill();
+              ctx.lineWidth = 1;
+              ctx.strokeStyle = '#444';
+              ctx.stroke();
+            }
+          }
         }
       }
 
@@ -322,9 +344,14 @@
       frameBox.textContent = `Frame ${clamped+1}/${totalFrames} · ${t.toFixed(2)}s`;
     }
 
+    function getSelectedHull(){
+      return hulls.find(h => h.id === selectedHullId);
+    }
+
     function updateDisplay(){
-      const hull = buildHullFaces(points);
-      const warning = (points.length>=4 && hull.type==='empty') ? 'Need ≥4 points across different times for a 3D hull.' : '';
+      const selectedHull = getSelectedHull();
+      const hull = buildHullFaces(selectedHull.points);
+      const warning = (selectedHull.points.length>=4 && hull.type==='empty') ? 'Need ≥4 points across different times for a 3D hull.' : '';
       msg.textContent = warning;
       renderFrame(currentFrame);
     }
@@ -365,10 +392,49 @@
       else renderFrame(currentFrame);
     });
 
+    function renderHullList(){
+      hullList.innerHTML = '';
+      hulls.forEach(hull => {
+        const item = document.createElement('div');
+        item.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px; border-radius:4px; margin:2px 0; cursor:pointer;';
+        if(hull.id === selectedHullId) item.style.background = 'rgba(103,232,249,0.2)';
+
+        const name = document.createElement('span');
+        name.textContent = hull.name;
+        name.style.cssText = 'flex:1; font-size:12px;';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '🗑';
+        deleteBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(255,100,100,0.2); border-radius:2px; cursor:pointer;';
+
+        item.appendChild(name);
+        if(hulls.length > 1) item.appendChild(deleteBtn); // Don't allow deleting last hull
+
+        item.addEventListener('click', e => {
+          if(e.target === deleteBtn) {
+            if(hulls.length > 1) {
+              hulls = hulls.filter(h => h.id !== hull.id);
+              if(selectedHullId === hull.id) selectedHullId = hulls[0].id;
+              renderHullList();
+              updateDisplay();
+            }
+          } else {
+            selectedHullId = hull.id;
+            renderHullList();
+            updateDisplay();
+          }
+        });
+
+        hullList.appendChild(item);
+      });
+    }
+
     // Click to add point at current frame
     canvas.addEventListener('click', e=>{
       if (!isFinite(video.duration)) return; const r=canvas.getBoundingClientRect();
-      const x=e.clientX-r.left, y=e.clientY-r.top; points.push({x,y,z:currentFrame});
+      const x=e.clientX-r.left, y=e.clientY-r.top;
+      const selectedHull = getSelectedHull();
+      selectedHull.points.push({x,y,z:currentFrame});
       updateDisplay();
     });
 
@@ -377,12 +443,13 @@
       e.preventDefault();
       const r=canvas.getBoundingClientRect();
       const x=e.clientX-r.left, y=e.clientY-r.top;
+      const selectedHull = getSelectedHull();
 
       // Find closest point within threshold
       let closestIndex = -1;
       let closestDist = 15; // pixel threshold
-      for(let i=0; i<points.length; i++){
-        const dist = Math.hypot(points[i].x - x, points[i].y - y);
+      for(let i=0; i<selectedHull.points.length; i++){
+        const dist = Math.hypot(selectedHull.points[i].x - x, selectedHull.points[i].y - y);
         if(dist < closestDist){
           closestDist = dist;
           closestIndex = i;
@@ -390,12 +457,33 @@
       }
 
       if(closestIndex >= 0){
-        points.splice(closestIndex, 1);
+        selectedHull.points.splice(closestIndex, 1);
         updateDisplay();
       }
     });
 
-    clearBtn.addEventListener('click', ()=>{ points=[]; msg.textContent=''; renderFrame(currentFrame); });
+    clearBtn.addEventListener('click', ()=>{
+      const selectedHull = getSelectedHull();
+      selectedHull.points = [];
+      msg.textContent = '';
+      renderFrame(currentFrame);
+    });
+
+    addHullBtn.addEventListener('click', ()=>{
+      const newHull = {
+        id: nextHullId++,
+        name: `Hull ${nextHullId}`,
+        points: [],
+        color: ['#67e8f9', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#fef160'][hulls.length % 6]
+      };
+      hulls.push(newHull);
+      selectedHullId = newHull.id;
+      renderHullList();
+      updateDisplay();
+    });
+
+    // Initialize hull list
+    renderHullList();
 
     // Helper function to render hull in different styles
     function renderHullForMode(hull, poly, frame, mode) {
@@ -485,33 +573,36 @@
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             }
 
-            const hull = buildHullFaces(points);
-            const poly = sliceHullAtFrame(points, hull, frame);
+            // Render all hulls combined
+            for(const hullData of hulls){
+              const hull = buildHullFaces(hullData.points);
+              const poly = sliceHullAtFrame(hullData.points, hull, frame);
 
-            renderHullForMode(hull, poly, frame, mode);
+              renderHullForMode(hull, poly, frame, mode);
 
-            // Render points only for videoTransparent mode
-            if (mode === 'videoTransparent') {
-              for(let i=0; i<points.length; i++){
-                const p = points[i];
-                const near = frame === p.z;
-                const onSurface = hull.surfacePoints && hull.surfacePoints.has(i);
+              // Render points only for videoTransparent mode
+              if (mode === 'videoTransparent') {
+                for(let i=0; i<hullData.points.length; i++){
+                  const p = hullData.points[i];
+                  const near = frame === p.z;
+                  const onSurface = hull.surfacePoints && hull.surfacePoints.has(i);
 
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, near ? 5 : 4, 0, 2*Math.PI);
+                  ctx.beginPath();
+                  ctx.arc(p.x, p.y, near ? 5 : 4, 0, 2*Math.PI);
 
-                if(onSurface){
-                  ctx.fillStyle = '#fff';
-                  ctx.fill();
-                  ctx.lineWidth = 2;
-                  ctx.strokeStyle = near ? '#00ffa6' : '#000';
-                  ctx.stroke();
-                } else {
-                  ctx.fillStyle = near ? '#ffaa00' : '#888';
-                  ctx.fill();
-                  ctx.lineWidth = 1;
-                  ctx.strokeStyle = '#444';
-                  ctx.stroke();
+                  if(onSurface){
+                    ctx.fillStyle = '#fff';
+                    ctx.fill();
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = near ? '#00ffa6' : '#000';
+                    ctx.stroke();
+                  } else {
+                    ctx.fillStyle = near ? '#ffaa00' : '#888';
+                    ctx.fill();
+                    ctx.lineWidth = 1;
+                    ctx.strokeStyle = '#444';
+                    ctx.stroke();
+                  }
                 }
               }
             }
