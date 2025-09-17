@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frame Counter</title>
+</head>
+<body>
+    <input type="file" accept="video/*" onchange="countFrames(this.files[0])">
+    <div id="result"></div>
+
+    <script>
+    async function countFrames(file) {
+        if (!file) return;
+
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.muted = true;
+
+        await new Promise(resolve => video.onloadedmetadata = resolve);
+
+        // Try parsing MP4 first
+        const arrayBuffer = await file.arrayBuffer();
+        let frames = parseMP4Frames(arrayBuffer);
+
+        if (!frames) {
+            // Fallback: Use requestVideoFrameCallback if available for precise counting
+            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                frames = await countFramesWithCallback(video);
+            } else {
+                // Last resort: estimate based on duration and seek accuracy
+                frames = await countFramesWithSeeking(video);
+            }
+        }
+
+        document.getElementById('result').innerText = `Frames: ${frames}`;
+        URL.revokeObjectURL(video.src);
+    }
+
+    async function countFramesWithCallback(video) {
+        return new Promise((resolve) => {
+            let frameCount = 0;
+            video.currentTime = 0;
+            video.play();
+
+            function onFrame() {
+                frameCount++;
+                if (video.currentTime >= video.duration) {
+                    video.pause();
+                    resolve(frameCount);
+                } else {
+                    video.requestVideoFrameCallback(onFrame);
+                }
+            }
+
+            video.requestVideoFrameCallback(onFrame);
+        });
+    }
+
+    async function countFramesWithSeeking(video) {
+        // Binary search to find frame boundaries
+        let frames = 0;
+        const precision = 0.001; // 1ms precision
+
+        for (let time = 0; time < video.duration; time += precision) {
+            video.currentTime = time;
+            await new Promise(resolve => video.onseeked = resolve);
+
+            const prevTime = video.currentTime;
+            video.currentTime = time + precision;
+            await new Promise(resolve => video.onseeked = resolve);
+
+            if (video.currentTime !== prevTime) {
+                frames++;
+            }
+        }
+
+        return frames;
+    }
+
+    function parseMP4Frames(buffer) {
+        const view = new DataView(buffer);
+
+        // Find video track's stsz atom by looking for video handler
+        let videoTrackStart = null;
+
+        // Look for 'hdlr' atom with 'vide' handler type
+        for (let i = 0; i < buffer.byteLength - 24; i++) {
+            if (view.getUint32(i + 4) === 0x68646c72) { // 'hdlr'
+                if (view.getUint32(i + 16) === 0x76696465) { // 'vide' handler type
+                    // Found video handler, now find the containing trak
+                    for (let j = i; j >= 0; j--) {
+                        if (view.getUint32(j + 4) === 0x7472616b) { // 'trak'
+                            videoTrackStart = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (!videoTrackStart) return null;
+
+        // Find stsz atom within this video track
+        const trackSize = view.getUint32(videoTrackStart);
+        const trackEnd = videoTrackStart + trackSize;
+
+        for (let i = videoTrackStart; i < trackEnd - 16; i++) {
+            if (view.getUint32(i + 4) === 0x7374737a) { // 'stsz'
+                const sampleCount = view.getUint32(i + 16);
+                return sampleCount;
+            }
+        }
+
+        return null;
+    }
+    </script>
+</body>
+</html>
