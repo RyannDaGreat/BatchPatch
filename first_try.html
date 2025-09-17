@@ -96,18 +96,19 @@
     function currentFrameIndex(){ return Math.round((video.currentTime||0) * fps); }
     function frameToTime(fi){ return fi / fps; }
 
-    function snapAndSeek(fi){
+    let seekResolve;
+    video.addEventListener('seeked', ()=>{ if(seekResolve) seekResolve(); });
+
+    async function snapAndSeek(fi){
       const clamped = Math.max(0, Math.min(totalFrames-1, fi|0));
       const t = frameToTime(clamped);
       if (isFinite(video.duration)) {
         video.currentTime = t;
-        // Wait for seek to complete before drawing
-        video.addEventListener('seeked', () => {
-          updateFrameBox();
-          draw();
-        }, { once: true });
+        await new Promise(r => seekResolve = r);
       }
       scrubber.value = String(clamped);
+      updateFrameBox();
+      draw();
     }
 
     function recomputeHull(){ faces = buildHullFaces(points); msg.textContent = (points.length && faces.length===0)?'Need ≥4 points across different times for a 3D hull.':''; }
