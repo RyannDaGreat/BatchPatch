@@ -23,6 +23,7 @@
   <header>
     <input id="file" type="file" accept="video/*" />
     <label>FPS <input id="fps" type="number" min="1" max="120" step="1" value="30"></label>
+    <button id="playPause">▶</button>
     <input id="scrubber" type="range" min="0" max="0" step="1" value="0" />
     <span id="frameBox">Frame 0/0 · 0.00s</span>
     <button id="clear">Clear Points</button>
@@ -75,6 +76,7 @@
     // ===== App state =====
     const file = document.getElementById('file');
     const fpsInput = document.getElementById('fps');
+    const playPause = document.getElementById('playPause');
     const scrubber = document.getElementById('scrubber');
     const frameBox = document.getElementById('frameBox');
     const clearBtn = document.getElementById('clear');
@@ -87,6 +89,8 @@
     let faces=[];      // hull faces
     let fps=30;        // user-defined fps for snapping
     let totalFrames=0; // actual frame count from MP4 metadata
+    let isPlaying=false;
+    let playInterval;
 
     function frameToTime(fi){ return fi / fps; }
 
@@ -121,6 +125,11 @@
 
     function recomputeHull(){ faces = buildHullFaces(points); msg.textContent = (points.length && faces.length===0)?'Need ≥4 points across different times for a 3D hull.':''; renderFrame(currentFrame); }
 
+    // Pure play/pause state functions
+    const togglePlay = () => isPlaying ? stopPlay() : startPlay();
+    const startPlay = () => { isPlaying = true; playPause.textContent = '⏸'; playInterval = setInterval(() => renderFrame((currentFrame + 1) % totalFrames), 1000/fps); };
+    const stopPlay = () => { isPlaying = false; playPause.textContent = '▶'; clearInterval(playInterval); };
+
     // ===== Event wiring =====
     file.addEventListener('change', async e=>{
       const f=e.target.files[0]; if(!f) return; try{ if(video.src && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);}catch{}
@@ -140,14 +149,16 @@
       video.addEventListener('error', ()=>{ msg.textContent='Unable to decode this file in this browser.'; }, { once:true });
     });
 
-    // Slider snapping to frames
-    scrubber.addEventListener('input', e=>{ const fi = parseInt(e.target.value,10)||0; renderFrame(fi); });
+    // Pure event handlers
+    playPause.addEventListener('click', togglePlay);
+    scrubber.addEventListener('input', e=>{ stopPlay(); renderFrame(parseInt(e.target.value,10)||0); });
 
     // FPS change updates UI scaling (totalFrames stays from MP4 metadata)
     fpsInput.addEventListener('change', ()=>{
       const newFps = Math.max(1, Math.min(120, parseInt(fpsInput.value,10)||30));
       fps = newFps;
-      renderFrame(currentFrame);
+      if(isPlaying) { stopPlay(); startPlay(); } // Restart with new fps
+      else renderFrame(currentFrame);
     });
 
     // Click to add point at snapped frame time
