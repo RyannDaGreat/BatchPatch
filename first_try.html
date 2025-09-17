@@ -470,6 +470,9 @@
     let totalFrames=0; // actual frame count from MP4 metadata
     let isPlaying=false;
     let playInterval;
+    let isDragging = false;
+    let dragPointIndex = -1;
+    let dragHullId = -1;
 
     function frameToTime(fi){ return fi / fps; }
 
@@ -513,12 +516,27 @@
           return `rgba(${r}, ${g}, ${b}, ${opacity})`;
         }
 
+        // Get tinted white color (mix hull color with white)
+        function getTintedWhite(baseColor, tintPercent = 0.12) {
+          const hex = baseColor.slice(1);
+          const r = parseInt(hex.slice(0, 2), 16);
+          const g = parseInt(hex.slice(2, 4), 16);
+          const b = parseInt(hex.slice(4, 6), 16);
+
+          // Mix with white (255, 255, 255)
+          const tintedR = Math.round(255 - (255 - r) * tintPercent);
+          const tintedG = Math.round(255 - (255 - g) * tintPercent);
+          const tintedB = Math.round(255 - (255 - b) * tintPercent);
+
+          return `rgb(${tintedR}, ${tintedG}, ${tintedB})`;
+        }
+
         // Render hull slice based on preview mode
         if (poly.length >= 3){
           ctx.beginPath(); for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y); ctx.closePath();
 
           if (currentPreviewMode === 'mask') {
-            ctx.fillStyle = 'white';
+            ctx.fillStyle = getTintedWhite(hullData.color);
             ctx.fill();
           } else if (currentPreviewMode === 'gray') {
             ctx.fillStyle = 'rgb(128,128,128)';
@@ -535,7 +553,7 @@
           ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y); ctx.lineTo(poly[1].x, poly[1].y);
 
           if (currentPreviewMode === 'mask') {
-            ctx.strokeStyle = 'white'; ctx.lineWidth = 3;
+            ctx.strokeStyle = getTintedWhite(hullData.color); ctx.lineWidth = 3;
           } else if (currentPreviewMode === 'gray') {
             ctx.strokeStyle = 'rgb(128,128,128)'; ctx.lineWidth = 3;
           } else { // GUI mode
@@ -547,7 +565,7 @@
           ctx.beginPath(); ctx.arc(poly[0].x, poly[0].y, isSelected ? 6 : 4, 0, 2*Math.PI);
 
           if (currentPreviewMode === 'mask') {
-            ctx.fillStyle = 'white';
+            ctx.fillStyle = getTintedWhite(hullData.color);
           } else if (currentPreviewMode === 'gray') {
             ctx.fillStyle = 'rgb(128,128,128)';
           } else { // GUI mode
@@ -582,14 +600,14 @@
             }
           }
         } else if (currentPreviewMode === 'mask') {
-          // Show all points as white dots in mask mode
+          // Show all points as tinted dots in mask mode
           for(let i=0; i<hullData.points.length; i++){
             const p = hullData.points[i];
             const near = clamped === p.z;
 
             ctx.beginPath();
             ctx.arc(p.x, p.y, near ? 5 : 4, 0, 2*Math.PI);
-            ctx.fillStyle = '#fff';
+            ctx.fillStyle = getTintedWhite(hullData.color);
             ctx.fill();
           }
         }
@@ -603,6 +621,37 @@
 
     function getSelectedHull(){
       return hulls.find(h => h.id === selectedHullId);
+    }
+
+    function getCanvasCoords(e){
+      const r = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / r.width;
+      const scaleY = canvas.height / r.height;
+      return {
+        x: (e.clientX - r.left) * scaleX,
+        y: (e.clientY - r.top) * scaleY
+      };
+    }
+
+    function findClosestPoint(x, y, threshold = 15){
+      let closestHull = null;
+      let closestIndex = -1;
+      let closestDist = threshold;
+
+      for(const hull of hulls){
+        if(!hull.visible) continue;
+        for(let i = 0; i < hull.points.length; i++){
+          const p = hull.points[i];
+          const dist = Math.hypot(p.x - x, p.y - y);
+          if(dist < closestDist){
+            closestDist = dist;
+            closestHull = hull;
+            closestIndex = i;
+          }
+        }
+      }
+
+      return closestHull ? {hull: closestHull, index: closestIndex} : null;
     }
 
     function updateDisplay(){
@@ -763,17 +812,62 @@
       });
     }
 
-    // Click to add point at current frame
-    canvas.addEventListener('click', e=>{
+    // Mouse down - start dragging or add point
+    canvas.addEventListener('mousedown', e=>{
       if (!isFinite(video.duration)) return;
-      const r=canvas.getBoundingClientRect();
-      const scaleX = canvas.width / r.width;
-      const scaleY = canvas.height / r.height;
-      const x=(e.clientX-r.left) * scaleX;
-      const y=(e.clientY-r.top) * scaleY;
-      const selectedHull = getSelectedHull();
-      selectedHull.points.push({x,y,z:currentFrame});
-      updateDisplay();
+
+      const coords = getCanvasCoords(e);
+      const closest = findClosestPoint(coords.x, coords.y);
+
+      if(closest && currentPreviewMode === 'gui'){
+        // Start dragging existing point
+        isDragging = true;
+        dragPointIndex = closest.index;
+        dragHullId = closest.hull.id;
+        selectedHullId = closest.hull.id; // Select the hull with the point being dragged
+        canvas.style.cursor = 'grabbing';
+        e.preventDefault();
+      }
+    });
+
+    // Mouse move - drag point
+    canvas.addEventListener('mousemove', e=>{
+      if(!isDragging) {
+        // Update cursor when hovering over points
+        if(currentPreviewMode === 'gui' && isFinite(video.duration)){
+          const coords = getCanvasCoords(e);
+          const closest = findClosestPoint(coords.x, coords.y);
+          canvas.style.cursor = closest ? 'grab' : 'crosshair';
+        }
+        return;
+      }
+
+      const coords = getCanvasCoords(e);
+      const hull = hulls.find(h => h.id === dragHullId);
+      if(hull && hull.points[dragPointIndex]){
+        hull.points[dragPointIndex].x = coords.x;
+        hull.points[dragPointIndex].y = coords.y;
+        updateDisplay();
+      }
+    });
+
+    // Mouse up - finish dragging or add point
+    canvas.addEventListener('mouseup', e=>{
+      if(isDragging){
+        isDragging = false;
+        dragPointIndex = -1;
+        dragHullId = -1;
+        canvas.style.cursor = 'crosshair';
+      } else if(!isDragging && isFinite(video.duration)){
+        // Add new point if we weren't dragging
+        const coords = getCanvasCoords(e);
+        const closest = findClosestPoint(coords.x, coords.y);
+        if(!closest){ // Only add if not clicking on existing point
+          const selectedHull = getSelectedHull();
+          selectedHull.points.push({x: coords.x, y: coords.y, z: currentFrame});
+          updateDisplay();
+        }
+      }
     });
 
     // Right-click to delete point
