@@ -1,82 +1,16 @@
 <!DOCTYPE html>
-<html>
-<head>
-    <title>Frame Counter</title>
-</head>
-<body>
-    <input type="file" accept="video/*" onchange="countFrames(this.files[0])">
-    <div id="result"></div>
-
-    <script>
-    async function countFrames(file) {
-        if (!file) return;
-
-        const result = document.getElementById('result');
-        result.innerText = 'Parsing...';
-
-        try {
-            const buffer = await file.arrayBuffer();
-            const frames = parseMP4Frames(buffer);
-
-            if (frames) {
-                result.innerText = `Frames: ${frames}`;
-            } else {
-                result.innerText = 'Could not parse frame count';
-            }
-        } catch (e) {
-            result.innerText = `Error: ${e.message}`;
-        }
-    }
-
-    function parseMP4Frames(buffer) {
-        const view = new DataView(buffer);
-
-        // Simple scan for stsz atom in video track
-        const moovStart = findSimpleAtom(0x6d6f6f76); // 'moov'
-        if (moovStart === -1) {
-            console.log('No moov atom found');
-            return null;
-        }
-
-        console.log('Found moov at', moovStart);
-
-        // Look for video handler first
-        let videoTrackFound = false;
-        for (let i = moovStart; i < buffer.byteLength - 20; i++) {
-            if (view.getUint32(i) === 0x68646c72 && view.getUint32(i + 12) === 0x76696465) { // hdlr + vide
-                videoTrackFound = true;
-                console.log('Found video handler at', i);
-                break;
-            }
-        }
-
-        if (!videoTrackFound) {
-            console.log('No video track found');
-            return null;
-        }
-
-        // Find stsz atom
-        for (let i = moovStart; i < buffer.byteLength - 20; i++) {
-            if (view.getUint32(i) === 0x7374737a) { // 'stsz'
-                const sampleSize = view.getUint32(i + 8);
-                const sampleCount = view.getUint32(i + 12);
-                console.log('Found stsz at', i, 'sample size:', sampleSize, 'count:', sampleCount);
-                return sampleCount;
-            }
-        }
-
-        console.log('No stsz atom found');
-        return null;
-
-        function findSimpleAtom(atomType) {
-            for (let i = 0; i < buffer.byteLength - 8; i++) {
-                if (view.getUint32(i + 4) === atomType) {
-                    return i;
-                }
-            }
-            return -1;
-        }
-    }
-    </script>
-</body>
-</html>
+<input type="file" accept="video/*" onchange="f(this.files[0])">
+<div id="r"></div>
+<script>
+async function f(file){
+if(!file)return;
+r.innerText='...';
+const v=new DataView(await file.arrayBuffer());
+for(let i=0;i<v.byteLength-8;i++)if(v.getUint32(i+4)==0x6d6f6f76){
+for(let j=i;j<v.byteLength-20;j++){
+if(v.getUint32(j)==0x68646c72&&v.getUint32(j+12)==0x76696465){
+for(let k=i;k<v.byteLength-20;k++)if(v.getUint32(k)==0x7374737a){
+r.innerText='Frames: '+v.getUint32(k+12);return}break}}break}
+r.innerText='Failed'
+}
+</script>
