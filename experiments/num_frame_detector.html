@@ -2,15 +2,9 @@
 <input type="file" accept="video/*" onchange="f(this.files[0])">
 <div id="r"></div>
 <script>
-async function f(file){
-if(!file)return;
-r.innerText='...';
-const v=new DataView(await file.arrayBuffer());
-for(let i=0;i<v.byteLength-8;i++)if(v.getUint32(i+4)==0x6d6f6f76){
-for(let j=i;j<v.byteLength-20;j++){
-if(v.getUint32(j)==0x68646c72&&v.getUint32(j+12)==0x76696465){
-for(let k=i;k<v.byteLength-20;k++)if(v.getUint32(k)==0x7374737a){
-r.innerText='Frames: '+v.getUint32(k+12);return}break}}break}
-r.innerText='Failed'
-}
+const find=(v,atom,start=0)=>{for(let i=start;i<v.byteLength-8;i++)if(v.getUint32(i+4)==atom)return i;return-1}
+const hasVideo=(v,start)=>{for(let i=start;i<v.byteLength-20;i++)if(v.getUint32(i)==0x68646c72&&v.getUint32(i+12)==0x76696465)return 1}
+const getFrames=(v,start)=>{for(let i=start;i<v.byteLength-20;i++)if(v.getUint32(i)==0x7374737a)return v.getUint32(i+12)}
+async function parseMP4Frames(file){const v=new DataView(await file.arrayBuffer());const m=find(v,0x6d6f6f76);return m>-1&&hasVideo(v,m)?getFrames(v,m):0}
+async function f(file){r.innerText=file?'Frames: '+(await parseMP4Frames(file)||'Failed'):''}
 </script>
