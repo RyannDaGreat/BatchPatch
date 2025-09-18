@@ -454,7 +454,9 @@
       </select>
     </label>
     <span id="msg"></span>
-    <button id="helpBtn" style="width:40px; height:40px; border-radius:50%; margin-left:auto; display:flex; align-items:center; justify-content:center; padding:0;"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 20 20"><path fill="#fff" d="M10 20a10 10 0 1 1 0-20a10 10 0 0 1 0 20m2-13c0 .28-.21.8-.42 1L10 9.58c-.57.58-1 1.6-1 2.42v1h2v-1c0-.29.21-.8.42-1L13 9.42c.57-.58 1-1.6 1-2.42a4 4 0 1 0-8 0h2a2 2 0 1 1 4 0m-3 8v2h2v-2z"/></svg></button>
+    <button id="undoBtn" disabled title="Undo (Ctrl+Z)" style="width:32px; height:32px; border-radius:50%; margin-left:auto; margin-right:8px; display:flex; align-items:center; justify-content:center; padding:0;"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="#fff" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88c3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8"/></svg></button>
+    <button id="redoBtn" disabled title="Redo (Ctrl+Y)" style="width:32px; height:32px; border-radius:50%; margin-right:8px; display:flex; align-items:center; justify-content:center; padding:0;"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" style="transform: scaleX(-1);"><path fill="#fff" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88c3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8"/></svg></button>
+    <button id="helpBtn" style="width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0;"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 20 20"><path fill="#fff" d="M10 20a10 10 0 1 1 0-20a10 10 0 0 1 0 20m2-13c0 .28-.21.8-.42 1L10 9.58c-.57.58-1 1.6-1 2.42v1h2v-1c0-.29.21-.8.42-1L13 9.42c.57-.58 1-1.6 1-2.42a4 4 0 1 0-8 0h2a2 2 0 1 1 4 0m-3 8v2h2v-2z"/></svg></button>
   </header>
   <main>
     <div class="video-container" style="position: relative;">
@@ -836,6 +838,8 @@
     const previewMode = document.getElementById('previewMode');
     const renderVideoBtn = document.getElementById('renderVideo');
     const renderAllBtn = document.getElementById('renderAll');
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
     const helpBtn = document.getElementById('helpBtn');
     const helpOverlay = document.getElementById('helpOverlay');
     const msg = document.getElementById('msg');
@@ -866,6 +870,90 @@
     let dragHullId = -1;
     let startFrame = 0;
     let endFrame = 0;
+
+    // Undo/Redo state management
+    let undoStack = [];
+    let redoStack = [];
+    const MAX_UNDO_HISTORY = 50;
+
+    function captureState() {
+      return {
+        hulls: JSON.parse(JSON.stringify(hulls)),
+        selectedHullId,
+        nextHullId,
+        bounds: JSON.parse(JSON.stringify(bounds)),
+        selectedBoundsId,
+        nextBoundsId,
+        startFrame,
+        endFrame
+      };
+    }
+
+    function restoreState(state) {
+      hulls = JSON.parse(JSON.stringify(state.hulls));
+      selectedHullId = state.selectedHullId;
+      nextHullId = state.nextHullId;
+      bounds = JSON.parse(JSON.stringify(state.bounds));
+      selectedBoundsId = state.selectedBoundsId;
+      nextBoundsId = state.nextBoundsId;
+      startFrame = state.startFrame;
+      endFrame = state.endFrame;
+
+      // Update UI
+      renderHullList();
+      renderBoundsList();
+      updateTimeRangeUI();
+      updateDisplay();
+      updateOutputSections();
+    }
+
+    function saveStateForUndo() {
+      const currentState = captureState();
+      undoStack.push(currentState);
+
+      // Limit history size
+      if(undoStack.length > MAX_UNDO_HISTORY) {
+        undoStack.shift();
+      }
+
+      // Clear redo stack when new action is performed
+      redoStack = [];
+
+      updateUndoRedoButtons();
+    }
+
+    function undo() {
+      if(undoStack.length === 0) return;
+
+      const currentState = captureState();
+      redoStack.push(currentState);
+
+      const previousState = undoStack.pop();
+      restoreState(previousState);
+
+      updateUndoRedoButtons();
+    }
+
+    function redo() {
+      if(redoStack.length === 0) return;
+
+      const currentState = captureState();
+      undoStack.push(currentState);
+
+      const nextState = redoStack.pop();
+      restoreState(nextState);
+
+      updateUndoRedoButtons();
+    }
+
+    function updateUndoRedoButtons() {
+      const undoBtn = document.getElementById('undoBtn');
+      const redoBtn = document.getElementById('redoBtn');
+
+      if(undoBtn) undoBtn.disabled = undoStack.length === 0;
+      if(redoBtn) redoBtn.disabled = redoStack.length === 0;
+    }
+
     function getSelectedBounds(){
       return bounds.find(b => b.id === selectedBoundsId);
     }
@@ -901,6 +989,7 @@
 
     // Clean handlers for hull operations
     function handleHullNameChange(hullId, newName) {
+      saveStateForUndo();
       const hull = hulls.find(h => h.id === hullId);
       if(hull) {
         hull.name = newName;
@@ -910,6 +999,7 @@
     }
 
     function handleHullColorChange(hullId, newColor) {
+      saveStateForUndo();
       const hull = hulls.find(h => h.id === hullId);
       if(hull) {
         hull.color = newColor;
@@ -920,6 +1010,7 @@
 
     function handleHullDelete(hullId) {
       if(hulls.length <= 1) return;
+      saveStateForUndo();
       hulls = hulls.filter(h => h.id !== hullId);
       if(selectedHullId === hullId) selectedHullId = hulls[0].id;
       renderHullList();
@@ -943,6 +1034,7 @@
 
     // Clean handlers for bounds operations
     function handleBoundsNameChange(boundsId, newName) {
+      saveStateForUndo();
       const bound = bounds.find(b => b.id === boundsId);
       if(bound) {
         bound.name = newName;
@@ -960,6 +1052,7 @@
 
     function handleBoundsDelete(boundsId) {
       if(bounds.length <= 1) return;
+      saveStateForUndo();
       bounds = bounds.filter(b => b.id !== boundsId);
       if(selectedBoundsId === boundsId) selectedBoundsId = bounds[0].id;
 
@@ -1936,6 +2029,7 @@
       // Check if clicking on bounding box edge
       const edgeType = isClickingBoundingEdge(coords.x, coords.y);
       if(edgeType) {
+        saveStateForUndo();
         isDraggingBounds = true;
         dragBoundsType = edgeType;
         e.preventDefault();
@@ -1945,6 +2039,7 @@
       const closest = findClosestPoint(coords.x, coords.y);
       if(closest && currentPreviewMode === 'gui'){
         // Start dragging existing point
+        saveStateForUndo();
         isDragging = true;
         dragPointIndex = closest.index;
         dragHullId = closest.hull.id;
@@ -1953,6 +2048,7 @@
         e.preventDefault();
       } else if(!closest && !edgeType && currentPreviewMode === 'gui'){
         // Add new point and immediately start dragging it
+        saveStateForUndo();
         const selectedHull = getSelectedHull();
         if(selectedHull && selectedHull.visible){
           selectedHull.points.push({x: coords.x, y: coords.y, z: currentFrame});
@@ -2068,12 +2164,14 @@
       }
 
       if(closestIndex >= 0){
+        saveStateForUndo();
         selectedHull.points.splice(closestIndex, 1);
         updateDisplay();
       }
     });
 
     clearBtn.addEventListener('click', ()=>{
+      saveStateForUndo();
       const selectedHull = getSelectedHull();
       selectedHull.points = [];
       msg.textContent = '';
@@ -2081,6 +2179,7 @@
     });
 
     addHullBtn.addEventListener('click', ()=>{
+      saveStateForUndo();
       const newHull = {
         id: nextHullId++,
         name: `Hull ${nextHullId}`,
@@ -2095,6 +2194,7 @@
     });
 
     addBoundsBtn.addEventListener('click', ()=>{
+      saveStateForUndo();
       const newBounds = {
         id: nextBoundsId++,
         name: `Bounds ${nextBoundsId}`,
@@ -2118,12 +2218,14 @@
 
     // Range slider event handlers
     startThumb.addEventListener('mousedown', (e) => {
+      saveStateForUndo();
       isDraggingRange = true;
       dragRangeType = 'start';
       e.preventDefault();
     });
 
     endThumb.addEventListener('mousedown', (e) => {
+      saveStateForUndo();
       isDraggingRange = true;
       dragRangeType = 'end';
       e.preventDefault();
@@ -2172,11 +2274,25 @@
       helpOverlay.classList.remove('visible');
     });
 
-    // Spacebar for play/pause
+    // Undo/Redo button events
+    undoBtn.addEventListener('click', undo);
+    redoBtn.addEventListener('click', redo);
+
+    // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-      if(e.code === 'Space' && e.target.tagName !== 'INPUT') {
+      if(e.target.tagName === 'INPUT') return; // Don't trigger during text input
+
+      if(e.code === 'Space') {
         e.preventDefault();
         togglePlay();
+      } else if(e.ctrlKey || e.metaKey) {
+        if(e.code === 'KeyZ' && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+        } else if((e.code === 'KeyY') || (e.code === 'KeyZ' && e.shiftKey)) {
+          e.preventDefault();
+          redo();
+        }
       }
     });
 
@@ -2184,6 +2300,9 @@
     renderHullList();
     renderBoundsList();
     updateVideoOverlay();
+
+    // Initialize undo/redo buttons
+    updateUndoRedoButtons();
 
     // Helper function to render hull in different styles
     function renderHullForMode(hull, poly, frame, mode, renderCtx = ctx) {
