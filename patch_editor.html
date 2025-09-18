@@ -167,6 +167,8 @@
       transition: all 0.3s ease;
     }
     #playPause{ min-width:32px; text-align:center; }
+    button:disabled, select:disabled, input:disabled{ opacity:0.5; cursor:not-allowed; pointer-events:none; }
+    .disabled{ opacity:0.5; }
     #playPause:disabled{ opacity:0.5; cursor:not-allowed; }
     #msg{ color:#ff7b7b; font-size:12px; margin-left:auto; }
     main{
@@ -261,7 +263,7 @@
       margin: 0;
       color: var(--muted);
       font-size: 16px;
-      line-height: 1.4;
+      line-height: 1.1;
     }
     .help-overlay {
       position: fixed;
@@ -415,10 +417,10 @@
   <header>
     <input id="file" type="file" accept="video/*" />
     <label for="file" class="file-button">Choose Video</label>
-    <label>FPS <input id="fps" type="number" min="1" max="120" step="1" value="30"></label>
-    <button id="playPause">▶</button>
+    <label>FPS <input id="fps" type="number" min="1" max="120" step="1" value="30" disabled></label>
+    <button id="playPause" disabled>▶</button>
     <div style="display: flex; flex-direction: column; gap: 2px;">
-      <input id="scrubber" type="range" min="0" max="0" step="1" value="0" />
+      <input id="scrubber" type="range" min="0" max="0" step="1" value="0" disabled />
       <div class="bounds-slider">
         <div class="bounds-track"></div>
         <div id="rangeFill" class="bounds-fill"></div>
@@ -434,31 +436,32 @@
         </div>
       </div>
     </div>
-    <span id="frameBox">Frame 0/0 · 0.00s</span>
-    <button id="clear">Clear Points</button>
-    <button id="renderVideo">Render 3 Videos</button>
-    <button id="helpBtn" style="width:32px; font-weight:bold;">?</button>
+    <span id="frameBox" class="disabled">Frame 0/0 · 0.00s</span>
+    <button id="clear" disabled>Clear Points</button>
+    <button id="renderVideo" disabled>Render 3 Videos</button>
     <label style="margin-left:20px;">Preview:
-      <select id="previewMode">
+      <select id="previewMode" disabled>
         <option value="gui">GUI</option>
         <option value="gray">Gray</option>
         <option value="mask">Mask</option>
       </select>
     </label>
     <span id="msg"></span>
+    <button id="helpBtn" style="width:32px; font-size:16px; margin-left:auto;">?</button>
   </header>
   <main>
     <div class="video-container" style="position: relative;">
       <canvas id="canvas"></canvas>
       <video id="video" muted playsinline preload="auto" style="display:none"></video>
       <div id="videoOverlay" class="video-overlay">
-        <p>Please choose a video</p>
+        <p style="display:flex; align-items:center; flex-direction:column; font-size:1.5em;"><span><span style="font-size:1.5em; margin-right:8px;">↖</span>Please choose a video</span><span style="font-size:0.8em;">(top left button)</span></p>
       </div>
     </div>
     <div id="hullPanel" class="hull-panel">
-      <h3 style="margin:0 0 10px 0; font-size:14px;">Hulls</h3>
+      <h3 style="margin:0 0 10px 0; font-size:20px; font-weight:normal; text-align:center;">Patch Hulls</h3>
+      <div style="height:1px; background:linear-gradient(90deg, transparent, rgba(103,232,249,0.5), transparent); margin-bottom:10px;"></div>
       <div id="hullList"></div>
-      <button id="addHull" style="width:100%; margin-top:10px;">+ Add Hull</button>
+      <button id="addHull" style="width:100%; margin-top:10px;" disabled>+ Add Hull</button>
     </div>
   </main>
   <div id="helpOverlay" class="help-overlay">
@@ -1115,6 +1118,17 @@
         fpsInput.value = Math.round(fps);
         scrubber.min = 0; scrubber.max = totalFrames-1; scrubber.step = 1; scrubber.value = 0;
         video.muted = true; video.play().then(()=>video.pause()).catch(()=>{});
+
+        // Enable all controls when video loads
+        fpsInput.disabled = false;
+        playPause.disabled = false;
+        scrubber.disabled = false;
+        clearBtn.disabled = false;
+        renderVideoBtn.disabled = false;
+        previewMode.disabled = false;
+        addHullBtn.disabled = false;
+        frameBox.classList.remove('disabled');
+
         updateVideoOverlay(); // Hide overlay when video loads
         renderFrame(0);
       }, { once:true });
@@ -1150,18 +1164,22 @@
         const colorBtn = document.createElement('button');
         colorBtn.innerHTML = '🎨';
         colorBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(100,100,100,0.2); border-radius:2px; cursor:pointer;';
+        colorBtn.disabled = totalFrames === 0;
 
         const editBtn = document.createElement('button');
         editBtn.innerHTML = '✏️';
         editBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(100,100,100,0.2); border-radius:2px; cursor:pointer;';
+        editBtn.disabled = totalFrames === 0;
 
         const eyeBtn = document.createElement('button');
         eyeBtn.textContent = hull.visible ? '👁' : '👁‍🗨';
         eyeBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(100,100,100,0.2); border-radius:2px; cursor:pointer;';
+        eyeBtn.disabled = totalFrames === 0;
 
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = '🗑';
         deleteBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(255,100,100,0.2); border-radius:2px; cursor:pointer;';
+        deleteBtn.disabled = totalFrames === 0;
 
         item.appendChild(colorIndicator);
         item.appendChild(name);
