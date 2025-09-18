@@ -1606,27 +1606,47 @@
         (async () => {
           for(let frame = startFrame; frame <= endFrame; frame++) {
             const t = frameToTime(frame);
-            video.currentTime = t;
 
-            // Update scrubber to show rendering progress
-            renderFrame(frame);
+            if (isFinite(video.duration)) {
+              video.currentTime = t;
+              await new Promise(r => seekResolve = r);
+            }
 
             tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-            // Wait for video to seek
-            await new Promise(r => seekResolve = r);
-
-            // Background - crop from main canvas
+            // Background - crop from video directly
             if (mode === 'blackWhite') {
               tempCtx.fillStyle = 'black';
               tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-            } else {
-              // First draw the full video to main canvas to get proper scaling
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            } else if (video.readyState >= 2) {
+              // Calculate the crop coordinates relative to video dimensions
+              const videoAspect = video.videoWidth / video.videoHeight;
+              const canvasAspect = canvas.width / canvas.height;
 
-              // Then copy the cropped region from main canvas to temp canvas
-              tempCtx.drawImage(canvas,
-                boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height,
+              let sourceX, sourceY, sourceW, sourceH;
+
+              if (videoAspect > canvasAspect) {
+                // Video is wider - letterboxed vertically
+                sourceH = video.videoHeight;
+                sourceW = sourceH * canvasAspect;
+                sourceX = (video.videoWidth - sourceW) / 2;
+                sourceY = 0;
+              } else {
+                // Video is taller - letterboxed horizontally
+                sourceW = video.videoWidth;
+                sourceH = sourceW / canvasAspect;
+                sourceX = 0;
+                sourceY = (video.videoHeight - sourceH) / 2;
+              }
+
+              // Calculate crop region in video coordinates
+              const cropX = sourceX + (boundingRect.x / canvas.width) * sourceW;
+              const cropY = sourceY + (boundingRect.y / canvas.height) * sourceH;
+              const cropW = (boundingRect.width / canvas.width) * sourceW;
+              const cropH = (boundingRect.height / canvas.height) * sourceH;
+
+              tempCtx.drawImage(video,
+                cropX, cropY, cropW, cropH,
                 0, 0, tempCanvas.width, tempCanvas.height);
             }
 
