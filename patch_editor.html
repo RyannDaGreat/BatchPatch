@@ -1627,10 +1627,6 @@
         addBoundsBtn.disabled = false;
         frameBox.classList.remove('disabled');
 
-        // Re-render lists to enable their buttons
-        renderHullList();
-        renderBoundsList();
-
         updateVideoOverlay(); // Hide overlay when video loads
         renderFrame(0);
       }, { once:true });
