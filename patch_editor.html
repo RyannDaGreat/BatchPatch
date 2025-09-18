@@ -1486,8 +1486,10 @@
 
         if(dragRangeType === 'start') {
           startFrame = Math.min(frame, endFrame);
+          renderFrame(startFrame);
         } else {
           endFrame = Math.max(frame, startFrame);
+          renderFrame(endFrame);
         }
 
         updateRangeSlider();
