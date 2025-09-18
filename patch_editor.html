@@ -1002,6 +1002,22 @@
       return false;
     }
 
+    // Double-click to jump to point's frame
+    canvas.addEventListener('dblclick', e=>{
+      if (!isFinite(video.duration) || currentPreviewMode !== 'gui') return;
+
+      const coords = getCanvasCoords(e);
+      const closest = findClosestPoint(coords.x, coords.y);
+
+      if(closest){
+        // Jump to the frame of the double-clicked point
+        const targetFrame = closest.hull.points[closest.index].z;
+        stopPlay();
+        renderFrame(targetFrame);
+        e.preventDefault();
+      }
+    });
+
     // Mouse down - start dragging or add point
     canvas.addEventListener('mousedown', e=>{
       if (!isFinite(video.duration)) return;
@@ -1041,8 +1057,8 @@
       }
     });
 
-    // Mouse move - drag point or bounding box
-    canvas.addEventListener('mousemove', e=>{
+    // Mouse move - drag point or bounding box (on document for out-of-bounds tracking)
+    document.addEventListener('mousemove', e=>{
       const coords = getCanvasCoords(e);
 
       if(isDraggingBounds) {
@@ -1068,7 +1084,21 @@
         return;
       }
 
-      if(!isDragging) {
+      if(isDragging) {
+        const hull = hulls.find(h => h.id === dragHullId);
+        if(hull && hull.points[dragPointIndex]){
+          // Clip coordinates to canvas bounds
+          hull.points[dragPointIndex].x = Math.max(0, Math.min(canvas.width, coords.x));
+          hull.points[dragPointIndex].y = Math.max(0, Math.min(canvas.height, coords.y));
+          updateDisplay();
+        }
+      }
+    });
+
+    // Canvas-specific mouse move for hover effects
+    canvas.addEventListener('mousemove', e=>{
+      if(!isDragging && !isDraggingBounds) {
+        const coords = getCanvasCoords(e);
         // Update cursor when hovering over edges or points
         if(currentPreviewMode === 'gui' && isFinite(video.duration)){
           const edgeType = isClickingBoundingEdge(coords.x, coords.y);
@@ -1080,19 +1110,11 @@
             canvas.style.cursor = closest ? 'grab' : 'crosshair';
           }
         }
-        return;
-      }
-
-      const hull = hulls.find(h => h.id === dragHullId);
-      if(hull && hull.points[dragPointIndex]){
-        hull.points[dragPointIndex].x = coords.x;
-        hull.points[dragPointIndex].y = coords.y;
-        updateDisplay();
       }
     });
 
-    // Mouse up - finish dragging
-    canvas.addEventListener('mouseup', e=>{
+    // Mouse up - finish dragging (on document to catch out-of-bounds release)
+    document.addEventListener('mouseup', e=>{
       if(isDragging){
         isDragging = false;
         dragPointIndex = -1;
