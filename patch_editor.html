@@ -442,24 +442,55 @@
           <span class="help-desc">Play/Pause video</span>
         </div>
         <div class="help-item">
-          <span class="help-key">Scrubber</span>
-          <span class="help-desc">Navigate frames</span>
+          <span class="help-key" style="display:flex; align-items:center; justify-content:center; padding:8px 10px;">
+            <svg width="80" height="8">
+              <defs>
+                <linearGradient id="scrubGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#ff0080"/>
+                  <stop offset="100%" style="stop-color:#67e8f9"/>
+                </linearGradient>
+              </defs>
+              <rect width="80" height="8" rx="4" fill="url(#scrubGrad)"/>
+              <circle cx="30" cy="4" r="6" fill="url(#scrubGrad)" filter="drop-shadow(0 0 5px rgba(255,0,128,0.5))"/>
+            </svg>
+          </span>
+          <span class="help-desc">Navigate frames with gradient scrubber</span>
         </div>
       </div>
       <hr>
       <div class="help-section">
         <h3>Visual Indicators</h3>
         <div class="help-item">
-          <span class="help-key">White Points</span>
-          <span class="help-desc">Points on hull surface</span>
+          <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
+            <svg width="20" height="20">
+              <circle cx="10" cy="10" r="5" fill="#fff" stroke="#00ffa6" stroke-width="2"/>
+            </svg>
+          </span>
+          <span class="help-desc">Edge point at current frame</span>
         </div>
         <div class="help-item">
-          <span class="help-key">Orange Points</span>
-          <span class="help-desc">Points at current frame</span>
+          <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
+            <svg width="20" height="20">
+              <circle cx="10" cy="10" r="4" fill="#fff" stroke="#000" stroke-width="2"/>
+            </svg>
+          </span>
+          <span class="help-desc">Edge point at another frame</span>
         </div>
         <div class="help-item">
-          <span class="help-key">Gray Points</span>
-          <span class="help-desc">Interior points</span>
+          <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
+            <svg width="20" height="20">
+              <circle cx="10" cy="10" r="5" fill="#ffaa00" stroke="#444" stroke-width="1"/>
+            </svg>
+          </span>
+          <span class="help-desc">Interior point at current frame</span>
+        </div>
+        <div class="help-item">
+          <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
+            <svg width="20" height="20">
+              <circle cx="10" cy="10" r="4" fill="#888" stroke="#444" stroke-width="1"/>
+            </svg>
+          </span>
+          <span class="help-desc">Interior point at another frame</span>
         </div>
       </div>
     </div>
