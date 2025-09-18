@@ -996,20 +996,124 @@
     }
 
     function drawBoundingBox() {
+      const hasIntersection = checkBoundingBoxHullIntersection();
+
       ctx.save();
       ctx.lineWidth = 3;
       ctx.setLineDash([12, 6]);
 
-      // Draw white dashed line first
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+      if(hasIntersection) {
+        // Orange dashed lines when intersecting
+        ctx.strokeStyle = 'rgba(255,165,0,0.8)';
+        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
 
-      // Offset the dash pattern and draw black dashed line
-      ctx.lineDashOffset = 9;
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-      ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+        ctx.lineDashOffset = 9;
+        ctx.strokeStyle = 'rgba(139,69,19,0.6)';
+        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+      } else {
+        // Original white/black dashed lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+
+        ctx.lineDashOffset = 9;
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+      }
 
       ctx.restore();
+    }
+
+    function checkBoundingBoxHullIntersection() {
+      // 3D bounding box defined by current frame range and 2D bounds
+      const boxMinX = boundingRect.x;
+      const boxMaxX = boundingRect.x + boundingRect.width;
+      const boxMinY = boundingRect.y;
+      const boxMaxY = boundingRect.y + boundingRect.height;
+      const boxMinZ = startFrame;
+      const boxMaxZ = endFrame;
+
+      // Check all visible hulls for edge intersections
+      for(const hullData of hulls) {
+        if(!hullData.visible) continue;
+
+        const hull = buildHullFaces(hullData.points);
+
+        // Check hull edges for intersection with bounding box faces
+        if(hull.type === '3d') {
+          // For 3D hull, check face edges
+          for(const face of hull.faces) {
+            for(let i = 0; i < 3; i++) {
+              const p1 = hullData.points[face[i]];
+              const p2 = hullData.points[face[(i + 1) % 3]];
+
+              if(lineIntersectsBoundingBox(p1, p2, boxMinX, boxMaxX, boxMinY, boxMaxY, boxMinZ, boxMaxZ)) {
+                return true;
+              }
+            }
+          }
+        } else if(hull.type === '2d') {
+          // For 2D hull, check edge segments
+          for(const [i, j] of hull.edges) {
+            const p1 = hullData.points[i];
+            const p2 = hullData.points[j];
+
+            if(lineIntersectsBoundingBox(p1, p2, boxMinX, boxMaxX, boxMinY, boxMaxY, boxMinZ, boxMaxZ)) {
+              return true;
+            }
+          }
+        } else if(hull.type === '1d') {
+          // For 1D hull, check the single edge
+          const [i, j] = hull.edges[0];
+          const p1 = hullData.points[i];
+          const p2 = hullData.points[j];
+
+          if(lineIntersectsBoundingBox(p1, p2, boxMinX, boxMaxX, boxMinY, boxMaxY, boxMinZ, boxMaxZ)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    function lineIntersectsBoundingBox(p1, p2, minX, maxX, minY, maxY, minZ, maxZ) {
+      // Line segment from p1 to p2 in 3D space
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const dz = p2.z - p1.z;
+
+      // Check intersection with each face of the bounding box
+      const faces = [
+        {axis: 'x', value: minX}, {axis: 'x', value: maxX},
+        {axis: 'y', value: minY}, {axis: 'y', value: maxY},
+        {axis: 'z', value: minZ}, {axis: 'z', value: maxZ}
+      ];
+
+      for(const face of faces) {
+        let t;
+        if(face.axis === 'x' && dx !== 0) {
+          t = (face.value - p1.x) / dx;
+        } else if(face.axis === 'y' && dy !== 0) {
+          t = (face.value - p1.y) / dy;
+        } else if(face.axis === 'z' && dz !== 0) {
+          t = (face.value - p1.z) / dz;
+        } else {
+          continue; // Line is parallel to this face
+        }
+
+        // Check if intersection point is within line segment and face bounds
+        if(t >= 0 && t <= 1) {
+          const ix = p1.x + t * dx;
+          const iy = p1.y + t * dy;
+          const iz = p1.z + t * dz;
+
+          if(ix >= minX && ix <= maxX && iy >= minY && iy <= maxY && iz >= minZ && iz <= maxZ) {
+            return true;
+          }
+        }
+      }
+
+      return false;
     }
 
     function getSelectedHull(){
