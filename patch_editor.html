@@ -1695,13 +1695,84 @@
     }
 
     function getBoundsDisplayColor(bound) {
-      const boxState = getBoundsState(bound);
+      // Check collision with other bounds first (highest priority)
+      for(const otherBounds of bounds) {
+        if(otherBounds.id !== bound.id && otherBounds.visible && checkBoundsCollision(bound, otherBounds)) {
+          return '#ff0000'; // Red for collision
+        }
+      }
 
-      if(boxState === 'collision') {
-        return '#ff0000'; // Red for collision
-      } else if(boxState === 'intersects') {
+      // Check hull interaction
+      const boundingRect = bound.rect;
+      const boxMinX = boundingRect.x;
+      const boxMaxX = boundingRect.x + boundingRect.width;
+      const boxMinY = boundingRect.y;
+      const boxMaxY = boundingRect.y + boundingRect.height;
+      const boxMinZ = bound.startFrame;
+      const boxMaxZ = bound.endFrame;
+
+      let hasPointsInside = false;
+      let hasIntersection = false;
+
+      for(const hullData of hulls) {
+        if(!hullData.visible) continue;
+
+        const hull = buildHullFaces(hullData.points);
+
+        // Check if any hull points are inside this bounds
+        for(const point of hullData.points) {
+          if(point.x >= boxMinX && point.x <= boxMaxX &&
+             point.y >= boxMinY && point.y <= boxMaxY &&
+             point.z >= boxMinZ && point.z <= boxMaxZ) {
+            hasPointsInside = true;
+            break;
+          }
+        }
+
+        // Check hull edges for intersection with bounding box faces
+        if(hull.type === '3d') {
+          // For 3D hull, check face edges
+          for(const face of hull.faces) {
+            for(let i = 0; i < 3; i++) {
+              const p1 = hullData.points[face[i]];
+              const p2 = hullData.points[face[(i + 1) % 3]];
+
+              if(lineIntersectsBoundingBox(p1, p2, boxMinX, boxMaxX, boxMinY, boxMaxY, boxMinZ, boxMaxZ)) {
+                hasIntersection = true;
+                break;
+              }
+            }
+            if(hasIntersection) break;
+          }
+        } else if(hull.type === '2d') {
+          // For 2D hull, check edge segments
+          for(const [i, j] of hull.edges) {
+            const p1 = hullData.points[i];
+            const p2 = hullData.points[j];
+
+            if(lineIntersectsBoundingBox(p1, p2, boxMinX, boxMaxX, boxMinY, boxMaxY, boxMinZ, boxMaxZ)) {
+              hasIntersection = true;
+              break;
+            }
+          }
+        } else if(hull.type === '1d') {
+          // For 1D hull, check the single edge
+          const [i, j] = hull.edges[0];
+          const p1 = hullData.points[i];
+          const p2 = hullData.points[j];
+
+          if(lineIntersectsBoundingBox(p1, p2, boxMinX, boxMaxX, boxMinY, boxMaxY, boxMinZ, boxMaxZ)) {
+            hasIntersection = true;
+          }
+        }
+
+        if(hasPointsInside || hasIntersection) break;
+      }
+
+      // Return appropriate color based on state
+      if(hasIntersection) {
         return getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-primary'); // Orange
-      } else if(boxState === 'contains') {
+      } else if(hasPointsInside) {
         return getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-primary'); // Cyan
       } else {
         return getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-primary'); // White/black
