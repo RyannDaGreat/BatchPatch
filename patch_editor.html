@@ -167,6 +167,7 @@
       transition: all 0.3s ease;
     }
     #playPause{ min-width:32px; text-align:center; }
+    #playPause:disabled{ opacity:0.5; cursor:not-allowed; }
     #msg{ color:#ff7b7b; font-size:12px; margin-left:auto; }
     main{
       display:flex;
@@ -1719,7 +1720,13 @@
         return;
       }
 
+      // Auto-pause if playing
+      if(isPlaying) {
+        stopPlay();
+      }
+
       renderVideoBtn.disabled = true;
+      playPause.disabled = true;
 
       try {
         msg.textContent = 'Rendering videos...';
@@ -1762,6 +1769,7 @@
         msg.textContent = 'Error rendering videos: ' + e.message;
       } finally {
         renderVideoBtn.disabled = false;
+        playPause.disabled = false;
       }
     });
   </script>
