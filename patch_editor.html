@@ -1258,12 +1258,25 @@
 
         const hull = buildHullFaces(hullData.points);
 
-        // Check if any points are inside the bounding box
+        // Check if any points are inside the bounding box OR touching boundary faces
         for(const point of hullData.points) {
-          if(point.x >= boxMinX && point.x <= boxMaxX &&
-             point.y >= boxMinY && point.y <= boxMaxY &&
-             point.z >= boxMinZ && point.z <= boxMaxZ) {
-            hasPointsInside = true;
+          const inX = point.x >= boxMinX && point.x <= boxMaxX;
+          const inY = point.y >= boxMinY && point.y <= boxMaxY;
+          const inZ = point.z >= boxMinZ && point.z <= boxMaxZ;
+
+          if(inX && inY && inZ) {
+            // Point is inside or on boundary
+            const onXFace = point.x === boxMinX || point.x === boxMaxX;
+            const onYFace = point.y === boxMinY || point.y === boxMaxY;
+            const onZFace = point.z === boxMinZ || point.z === boxMaxZ;
+
+            if(onXFace || onYFace || onZFace) {
+              // Point is touching a boundary face - this is intersection
+              hasIntersection = true;
+            } else {
+              // Point is in interior
+              hasPointsInside = true;
+            }
             break;
           }
         }
@@ -1385,12 +1398,25 @@
 
         const hull = buildHullFaces(hullData.points);
 
-        // Check if any points are inside the bounding box
+        // Check if any points are inside the bounding box OR touching boundary faces
         for(const point of hullData.points) {
-          if(point.x >= boxMinX && point.x <= boxMaxX &&
-             point.y >= boxMinY && point.y <= boxMaxY &&
-             point.z >= boxMinZ && point.z <= boxMaxZ) {
-            hasPointsInside = true;
+          const inX = point.x >= boxMinX && point.x <= boxMaxX;
+          const inY = point.y >= boxMinY && point.y <= boxMaxY;
+          const inZ = point.z >= boxMinZ && point.z <= boxMaxZ;
+
+          if(inX && inY && inZ) {
+            // Point is inside or on boundary
+            const onXFace = point.x === boxMinX || point.x === boxMaxX;
+            const onYFace = point.y === boxMinY || point.y === boxMaxY;
+            const onZFace = point.z === boxMinZ || point.z === boxMaxZ;
+
+            if(onXFace || onYFace || onZFace) {
+              // Point is touching a boundary face - this is intersection
+              hasIntersection = true;
+            } else {
+              // Point is in interior
+              hasPointsInside = true;
+            }
             break;
           }
         }
@@ -1719,12 +1745,25 @@
 
         const hull = buildHullFaces(hullData.points);
 
-        // Check if any hull points are inside this bounds
+        // Check if any hull points are inside this bounds OR touching boundary faces
         for(const point of hullData.points) {
-          if(point.x >= boxMinX && point.x <= boxMaxX &&
-             point.y >= boxMinY && point.y <= boxMaxY &&
-             point.z >= boxMinZ && point.z <= boxMaxZ) {
-            hasPointsInside = true;
+          const inX = point.x >= boxMinX && point.x <= boxMaxX;
+          const inY = point.y >= boxMinY && point.y <= boxMaxY;
+          const inZ = point.z >= boxMinZ && point.z <= boxMaxZ;
+
+          if(inX && inY && inZ) {
+            // Point is inside or on boundary
+            const onXFace = point.x === boxMinX || point.x === boxMaxX;
+            const onYFace = point.y === boxMinY || point.y === boxMaxY;
+            const onZFace = point.z === boxMinZ || point.z === boxMaxZ;
+
+            if(onXFace || onYFace || onZFace) {
+              // Point is touching a boundary face - this is intersection
+              hasIntersection = true;
+            } else {
+              // Point is in interior
+              hasPointsInside = true;
+            }
             break;
           }
         }
