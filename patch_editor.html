@@ -1995,25 +1995,36 @@
       const boundingRect = selectedBounds.rect;
       const threshold = 8; // Distance from edge to be considered "on" the edge
 
-      // Check top edge
+      // Check corners first (higher priority than edges)
+      if(Math.abs(x - boundingRect.x) <= threshold && Math.abs(y - boundingRect.y) <= threshold) {
+        return 'corner-tl'; // top-left
+      }
+      if(Math.abs(x - (boundingRect.x + boundingRect.width)) <= threshold && Math.abs(y - boundingRect.y) <= threshold) {
+        return 'corner-tr'; // top-right
+      }
+      if(Math.abs(x - boundingRect.x) <= threshold && Math.abs(y - (boundingRect.y + boundingRect.height)) <= threshold) {
+        return 'corner-bl'; // bottom-left
+      }
+      if(Math.abs(x - (boundingRect.x + boundingRect.width)) <= threshold && Math.abs(y - (boundingRect.y + boundingRect.height)) <= threshold) {
+        return 'corner-br'; // bottom-right
+      }
+
+      // Check edges
       if(Math.abs(y - boundingRect.y) <= threshold &&
          x >= boundingRect.x && x <= boundingRect.x + boundingRect.width) {
         return 'edge-top';
       }
 
-      // Check bottom edge
       if(Math.abs(y - (boundingRect.y + boundingRect.height)) <= threshold &&
          x >= boundingRect.x && x <= boundingRect.x + boundingRect.width) {
         return 'edge-bottom';
       }
 
-      // Check left edge
       if(Math.abs(x - boundingRect.x) <= threshold &&
          y >= boundingRect.y && y <= boundingRect.y + boundingRect.height) {
         return 'edge-left';
       }
 
-      // Check right edge
       if(Math.abs(x - (boundingRect.x + boundingRect.width)) <= threshold &&
          y >= boundingRect.y && y <= boundingRect.y + boundingRect.height) {
         return 'edge-right';
@@ -2105,6 +2116,30 @@
             boundingRect.width = Math.max(20, newWidth);
           } else if(dragBoundsType === 'edge-right') {
             boundingRect.width = Math.max(20, Math.min(maxX - boundingRect.x, coords.x - boundingRect.x));
+          } else if(dragBoundsType === 'corner-tl') {
+            // Top-left corner: adjust x, y, width, height
+            const newWidth = boundingRect.width + (boundingRect.x - Math.max(minX, coords.x));
+            const newHeight = boundingRect.height + (boundingRect.y - Math.max(minY, coords.y));
+            boundingRect.x = Math.max(minX, coords.x);
+            boundingRect.y = Math.max(minY, coords.y);
+            boundingRect.width = Math.max(20, newWidth);
+            boundingRect.height = Math.max(20, newHeight);
+          } else if(dragBoundsType === 'corner-tr') {
+            // Top-right corner: adjust y, width, height
+            const newHeight = boundingRect.height + (boundingRect.y - Math.max(minY, coords.y));
+            boundingRect.y = Math.max(minY, coords.y);
+            boundingRect.width = Math.max(20, Math.min(maxX - boundingRect.x, coords.x - boundingRect.x));
+            boundingRect.height = Math.max(20, newHeight);
+          } else if(dragBoundsType === 'corner-bl') {
+            // Bottom-left corner: adjust x, width, height
+            const newWidth = boundingRect.width + (boundingRect.x - Math.max(minX, coords.x));
+            boundingRect.x = Math.max(minX, coords.x);
+            boundingRect.width = Math.max(20, newWidth);
+            boundingRect.height = Math.max(20, Math.min(maxY - boundingRect.y, coords.y - boundingRect.y));
+          } else if(dragBoundsType === 'corner-br') {
+            // Bottom-right corner: adjust width, height
+            boundingRect.width = Math.max(20, Math.min(maxX - boundingRect.x, coords.x - boundingRect.x));
+            boundingRect.height = Math.max(20, Math.min(maxY - boundingRect.y, coords.y - boundingRect.y));
           }
         }
 
@@ -2133,6 +2168,8 @@
           if(edgeType) {
             if(edgeType === 'edge-top' || edgeType === 'edge-bottom') canvas.style.cursor = 'ns-resize';
             else if(edgeType === 'edge-left' || edgeType === 'edge-right') canvas.style.cursor = 'ew-resize';
+            else if(edgeType === 'corner-tl' || edgeType === 'corner-br') canvas.style.cursor = 'nw-resize';
+            else if(edgeType === 'corner-tr' || edgeType === 'corner-bl') canvas.style.cursor = 'ne-resize';
           } else {
             const closest = findClosestPoint(coords.x, coords.y);
             canvas.style.cursor = closest ? 'grab' : 'crosshair';
