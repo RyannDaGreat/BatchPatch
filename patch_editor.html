@@ -444,7 +444,8 @@
     </div>
     <span id="frameBox" class="disabled">Frame 0/0 · 0.00s</span>
     <button id="clear" disabled>Clear Points</button>
-    <button id="renderVideo" disabled>Render 3 Videos</button>
+    <button id="renderVideo" disabled>Render Selected</button>
+    <button id="renderAll" disabled>Render All</button>
     <label style="margin-left:20px;">Preview:
       <select id="previewMode" disabled>
         <option value="gui">GUI</option>
@@ -626,21 +627,8 @@
     </div>
   </div>
   <div id="outputContainer" style="display:none; margin:20px; padding:20px; background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%); border-radius: 30px; backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 20px 40px rgba(0,0,0,0.3), 0 10px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);">
-    <h3 style="margin:0 0 20px 0; font-size:18px; color:var(--fg); text-align:center;">Rendered Videos</h3>
-    <div style="display:flex; gap:20px; width:100%;">
-      <div style="flex:1; padding:15px; background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); border-radius: 20px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05);">
-        <h4 style="margin:0 0 10px 0; font-size:14px; color:var(--accent); text-align:center;">GUI Video</h4>
-        <video id="outputVideo1" controls autoplay loop muted style="width:100%; border-radius:12px; box-shadow: 0 6px 20px rgba(0,0,0,0.4);"></video>
-      </div>
-      <div style="flex:1; padding:15px; background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); border-radius: 20px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05);">
-        <h4 style="margin:0 0 10px 0; font-size:14px; color:var(--accent); text-align:center;">Gray Video</h4>
-        <video id="outputVideo2" controls autoplay loop muted style="width:100%; border-radius:12px; box-shadow: 0 6px 20px rgba(0,0,0,0.4);"></video>
-      </div>
-      <div style="flex:1; padding:15px; background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); border-radius: 20px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05);">
-        <h4 style="margin:0 0 10px 0; font-size:14px; color:var(--accent); text-align:center;">Mask Video</h4>
-        <video id="outputVideo3" controls autoplay loop muted style="width:100%; border-radius:12px; box-shadow: 0 6px 20px rgba(0,0,0,0.4);"></video>
-      </div>
-    </div>
+    <h3 style="margin:0 0 20px 0; font-size:18px; color:var(--fg); text-align:center; font-weight:normal;">Rendered Videos</h3>
+    <div id="outputList"></div>
   </div>
 
   <script>
@@ -839,6 +827,7 @@
     const boundsList = document.getElementById('boundsList');
     const previewMode = document.getElementById('previewMode');
     const renderVideoBtn = document.getElementById('renderVideo');
+    const renderAllBtn = document.getElementById('renderAll');
     const helpBtn = document.getElementById('helpBtn');
     const helpOverlay = document.getElementById('helpOverlay');
     const msg = document.getElementById('msg');
@@ -846,9 +835,7 @@
     const ctx = canvas.getContext('2d');
     const video = document.getElementById('video');
     const outputContainer = document.getElementById('outputContainer');
-    const outputVideo1 = document.getElementById('outputVideo1');
-    const outputVideo2 = document.getElementById('outputVideo2');
-    const outputVideo3 = document.getElementById('outputVideo3');
+    const outputList = document.getElementById('outputList');
     const videoOverlay = document.getElementById('videoOverlay');
     const startThumb = document.getElementById('startThumb');
     const endThumb = document.getElementById('endThumb');
@@ -860,6 +847,7 @@
     let bounds = [{id: 0, name: 'Bounds 1', rect: {x: 0, y: 0, width: 0, height: 0}, color: '#ff6b6b', visible: true}];
     let selectedBoundsId = 0;
     let nextBoundsId = 1;
+    let renderedBounds = new Map(); // boundsId -> {gui, gray, mask} video URLs
     let currentPreviewMode = 'gui';
     let fps=30;        // only for video seeking
     let totalFrames=0; // actual frame count from MP4 metadata
@@ -872,6 +860,86 @@
     let endFrame = 0;
     function getSelectedBounds(){
       return bounds.find(b => b.id === selectedBoundsId);
+    }
+
+    // Clean handlers for bounds operations
+    function handleBoundsNameChange(boundsId, newName) {
+      const bound = bounds.find(b => b.id === boundsId);
+      if(bound) {
+        bound.name = newName;
+        renderBoundsList();
+        updateDisplay();
+        updateOutputSections();
+
+        // Update render button text if this is the selected bounds
+        if(boundsId === selectedBoundsId) {
+          renderVideoBtn.textContent = `Render "${newName}"`;
+        }
+      }
+    }
+
+    function handleBoundsDelete(boundsId) {
+      if(bounds.length <= 1) return;
+      bounds = bounds.filter(b => b.id !== boundsId);
+      if(selectedBoundsId === boundsId) selectedBoundsId = bounds[0].id;
+
+      // Clean up rendered videos
+      if(renderedBounds.has(boundsId)) {
+        const videos = renderedBounds.get(boundsId);
+        Object.values(videos).forEach(url => URL.revokeObjectURL(url));
+        renderedBounds.delete(boundsId);
+      }
+
+      renderBoundsList();
+      updateDisplay();
+      updateOutputSections();
+    }
+
+    function handleBoundsSelect(boundsId) {
+      selectedBoundsId = boundsId;
+      renderBoundsList();
+      updateDisplay();
+
+      // Update render button text
+      const selectedBounds = getSelectedBounds();
+      if(selectedBounds) {
+        renderVideoBtn.textContent = `Render "${selectedBounds.name}"`;
+      }
+    }
+
+    function updateOutputSections() {
+      outputList.innerHTML = '';
+      if(renderedBounds.size === 0) {
+        outputContainer.style.display = 'none';
+        return;
+      }
+
+      outputContainer.style.display = 'block';
+      renderedBounds.forEach((videos, boundsId) => {
+        const bound = bounds.find(b => b.id === boundsId);
+        if(!bound) return;
+
+        const section = document.createElement('div');
+        section.style.cssText = 'margin-bottom: 30px;';
+        section.innerHTML = `
+          <h4 style="margin:0 0 15px 0; font-size:16px; color:var(--accent); text-align:center; font-weight:normal;">"${bound.name}" Videos</h4>
+          <div style="display:flex; gap:20px; width:100%;">
+            <div style="flex:1; padding:15px; background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); border-radius: 20px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05);">
+              <h5 style="margin:0 0 10px 0; font-size:14px; color:var(--accent); text-align:center; font-weight:normal;">${bound.name} - GUI</h5>
+              <video controls autoplay loop muted style="width:100%; border-radius:12px; box-shadow: 0 6px 20px rgba(0,0,0,0.4);" src="${videos.gui}"></video>
+            </div>
+            <div style="flex:1; padding:15px; background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); border-radius: 20px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05);">
+              <h5 style="margin:0 0 10px 0; font-size:14px; color:var(--accent); text-align:center; font-weight:normal;">${bound.name} - Gray</h5>
+              <video controls autoplay loop muted style="width:100%; border-radius:12px; box-shadow: 0 6px 20px rgba(0,0,0,0.4);" src="${videos.gray}"></video>
+            </div>
+            <div style="flex:1; padding:15px; background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); border-radius: 20px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05);">
+              <h5 style="margin:0 0 10px 0; font-size:14px; color:var(--accent); text-align:center; font-weight:normal;">${bound.name} - Mask</h5>
+              <video controls autoplay loop muted style="width:100%; border-radius:12px; box-shadow: 0 6px 20px rgba(0,0,0,0.4);" src="${videos.mask}"></video>
+            </div>
+          </div>
+        `;
+        outputList.appendChild(section);
+      });
     }
     let isDraggingRange = false;
     let isDraggingBounds = false;
@@ -1266,11 +1334,6 @@
       const warning = (selectedHull.points.length>=4 && hull.type==='empty') ? 'Need ≥4 points across different times for a 3D hull.' : '';
       msg.textContent = warning;
 
-      // Update render button text to show selected bounds
-      const selectedBounds = getSelectedBounds();
-      if(selectedBounds) {
-        renderVideoBtn.textContent = `Render "${selectedBounds.name}"`;
-      }
 
       renderFrame(currentFrame);
     }
@@ -1311,6 +1374,7 @@
         scrubber.disabled = false;
         clearBtn.disabled = false;
         renderVideoBtn.disabled = false;
+        renderAllBtn.disabled = false;
         previewMode.disabled = false;
         addHullBtn.disabled = false;
         addBoundsBtn.disabled = false;
@@ -1489,28 +1553,18 @@
 
         item.addEventListener('click', e => {
           if(e.target === deleteBtn) {
-            if(bounds.length > 1) {
-              bounds = bounds.filter(b => b.id !== bound.id);
-              if(selectedBoundsId === bound.id) selectedBoundsId = bounds[0].id;
-              renderBoundsList();
-              updateDisplay();
-            }
+            handleBoundsDelete(bound.id);
           } else if(e.target === eyeBtn) {
             bound.visible = !bound.visible;
             renderBoundsList();
             updateDisplay();
           } else if(e.target === editBtn) {
-            // Create an inline text input for editing the name
             const newName = prompt('Enter new bounds name:', bound.name);
             if(newName !== null && newName.trim() !== '') {
-              bound.name = newName.trim();
-              renderBoundsList();
-              updateDisplay();
+              handleBoundsNameChange(bound.id, newName.trim());
             }
           } else {
-            selectedBoundsId = bound.id;
-            renderBoundsList();
-            updateDisplay();
+            handleBoundsSelect(bound.id);
           }
         });
 
@@ -2014,6 +2068,40 @@
       });
     }
 
+    async function renderBoundsVideos(boundsId) {
+      const bound = bounds.find(b => b.id === boundsId);
+      if(!bound) return;
+
+      // Clean up old videos for this bounds
+      if(renderedBounds.has(boundsId)) {
+        const oldVideos = renderedBounds.get(boundsId);
+        Object.values(oldVideos).forEach(url => URL.revokeObjectURL(url));
+      }
+
+      // Store current selected bounds to restore later
+      const originalSelectedBoundsId = selectedBoundsId;
+      selectedBoundsId = boundsId;
+
+      try {
+        // Render all three videos for this bounds
+        const guiUrl = await renderSingleVideo('videoTransparent');
+        const grayUrl = await renderSingleVideo('videoGray');
+        const maskUrl = await renderSingleVideo('blackWhite');
+
+        // Store the rendered videos
+        renderedBounds.set(boundsId, {
+          gui: guiUrl,
+          gray: grayUrl,
+          mask: maskUrl
+        });
+
+        updateOutputSections();
+      } finally {
+        // Restore original selected bounds
+        selectedBoundsId = originalSelectedBoundsId;
+      }
+    }
+
     renderVideoBtn.addEventListener('click', async ()=>{
       if(!totalFrames) {
         msg.textContent = 'Load a video first';
@@ -2029,46 +2117,51 @@
       playPause.disabled = true;
 
       try {
-        msg.textContent = 'Rendering videos...';
-
-        // Render all three videos in correct order
-        const url1 = await renderSingleVideo('videoTransparent');
-        const url2 = await renderSingleVideo('videoGray');
-        const url3 = await renderSingleVideo('blackWhite');
-
-        // Set video sources
-        outputVideo1.src = url1;
-        outputVideo2.src = url2;
-        outputVideo3.src = url3;
-
-        // Sync video playback
-        outputVideo1.addEventListener('loadeddata', () => {
-          outputVideo2.currentTime = outputVideo1.currentTime;
-          outputVideo3.currentTime = outputVideo1.currentTime;
-        });
-
-        outputVideo1.addEventListener('play', () => {
-          outputVideo2.play();
-          outputVideo3.play();
-        });
-
-        outputVideo1.addEventListener('pause', () => {
-          outputVideo2.pause();
-          outputVideo3.pause();
-        });
-
-        outputVideo1.addEventListener('seeked', () => {
-          outputVideo2.currentTime = outputVideo1.currentTime;
-          outputVideo3.currentTime = outputVideo1.currentTime;
-        });
-
-        outputContainer.style.display = 'block';
         const selectedBounds = getSelectedBounds();
-        msg.textContent = `Videos rendered for "${selectedBounds?.name || 'Unknown Bounds'}"!`;
+        msg.textContent = `Rendering videos for "${selectedBounds?.name}"...`;
+
+        await renderBoundsVideos(selectedBoundsId);
+
+        msg.textContent = `Videos rendered for "${selectedBounds?.name}"!`;
 
       } catch(e) {
         msg.textContent = 'Error rendering videos: ' + e.message;
       } finally {
+        renderVideoBtn.disabled = false;
+        playPause.disabled = false;
+      }
+    });
+
+    renderAllBtn.addEventListener('click', async ()=>{
+      if(!totalFrames) {
+        msg.textContent = 'Load a video first';
+        return;
+      }
+
+      // Auto-pause if playing
+      if(isPlaying) {
+        stopPlay();
+      }
+
+      renderAllBtn.disabled = true;
+      renderVideoBtn.disabled = true;
+      playPause.disabled = true;
+
+      try {
+        msg.textContent = `Rendering videos for all ${bounds.length} bounds...`;
+
+        for(let i = 0; i < bounds.length; i++) {
+          const bound = bounds[i];
+          msg.textContent = `Rendering "${bound.name}" (${i + 1}/${bounds.length})...`;
+          await renderBoundsVideos(bound.id);
+        }
+
+        msg.textContent = `All ${bounds.length} bounds rendered successfully!`;
+
+      } catch(e) {
+        msg.textContent = 'Error rendering videos: ' + e.message;
+      } finally {
+        renderAllBtn.disabled = false;
         renderVideoBtn.disabled = false;
         playPause.disabled = false;
       }
