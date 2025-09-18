@@ -1085,9 +1085,19 @@
       renderFrame(currentFrame);
     }
 
-    // Pure play/pause state functions
+    // Pure play/pause state functions with bounds support
     const togglePlay = () => isPlaying ? stopPlay() : startPlay();
-    const startPlay = () => { isPlaying = true; playPause.textContent = '⏸'; playInterval = setInterval(() => renderFrame((currentFrame + 1) % totalFrames), 1000/fps); };
+    const startPlay = () => {
+      isPlaying = true;
+      playPause.textContent = '⏸';
+      playInterval = setInterval(() => {
+        let nextFrame = currentFrame + 1;
+        if (nextFrame > endFrame) {
+          nextFrame = startFrame; // Loop back to start of range
+        }
+        renderFrame(nextFrame);
+      }, 1000/fps);
+    };
     const stopPlay = () => { isPlaying = false; playPause.textContent = '▶'; clearInterval(playInterval); };
 
     // ===== Event wiring =====
@@ -1514,63 +1524,70 @@
     updateVideoOverlay();
 
     // Helper function to render hull in different styles
-    function renderHullForMode(hull, poly, frame, mode) {
+    function renderHullForMode(hull, poly, frame, mode, renderCtx = ctx) {
       if (poly.length >= 3) {
-        ctx.beginPath();
-        for(let i=0;i<poly.length;i++) (i?ctx.lineTo:ctx.moveTo).call(ctx, poly[i].x, poly[i].y);
-        ctx.closePath();
+        renderCtx.beginPath();
+        for(let i=0;i<poly.length;i++) (i?renderCtx.lineTo:renderCtx.moveTo).call(renderCtx, poly[i].x, poly[i].y);
+        renderCtx.closePath();
 
         if (mode === 'blackWhite') {
-          ctx.fillStyle='white';
-          ctx.fill();
+          renderCtx.fillStyle='white';
+          renderCtx.fill();
         } else if (mode === 'videoGray') {
-          ctx.fillStyle='rgb(128,128,128)';
-          ctx.fill();
+          renderCtx.fillStyle='rgb(128,128,128)';
+          renderCtx.fill();
         } else { // videoTransparent
-          ctx.fillStyle='rgba(255,255,255,0.5)';
-          ctx.strokeStyle='#67e8f9';
-          ctx.lineWidth=2;
-          ctx.fill();
-          ctx.stroke();
+          renderCtx.fillStyle='rgba(255,255,255,0.5)';
+          renderCtx.strokeStyle='#67e8f9';
+          renderCtx.lineWidth=2;
+          renderCtx.fill();
+          renderCtx.stroke();
         }
       } else if (poly.length === 2) {
-        ctx.beginPath();
-        ctx.moveTo(poly[0].x, poly[0].y);
-        ctx.lineTo(poly[1].x, poly[1].y);
+        renderCtx.beginPath();
+        renderCtx.moveTo(poly[0].x, poly[0].y);
+        renderCtx.lineTo(poly[1].x, poly[1].y);
 
         if (mode === 'blackWhite') {
-          ctx.strokeStyle='white';
-          ctx.lineWidth=3;
-          ctx.stroke();
+          renderCtx.strokeStyle='white';
+          renderCtx.lineWidth=3;
+          renderCtx.stroke();
         } else if (mode === 'videoGray') {
-          ctx.strokeStyle='rgb(128,128,128)';
-          ctx.lineWidth=3;
-          ctx.stroke();
+          renderCtx.strokeStyle='rgb(128,128,128)';
+          renderCtx.lineWidth=3;
+          renderCtx.stroke();
         } else { // videoTransparent
-          ctx.strokeStyle='#67e8f9';
-          ctx.lineWidth=3;
-          ctx.stroke();
+          renderCtx.strokeStyle='#67e8f9';
+          renderCtx.lineWidth=3;
+          renderCtx.stroke();
         }
       } else if (poly.length === 1) {
-        ctx.beginPath();
-        ctx.arc(poly[0].x, poly[0].y, 6, 0, 2*Math.PI);
+        renderCtx.beginPath();
+        renderCtx.arc(poly[0].x, poly[0].y, 6, 0, 2*Math.PI);
 
         if (mode === 'blackWhite') {
-          ctx.fillStyle='white';
-          ctx.fill();
+          renderCtx.fillStyle='white';
+          renderCtx.fill();
         } else if (mode === 'videoGray') {
-          ctx.fillStyle='rgb(128,128,128)';
-          ctx.fill();
+          renderCtx.fillStyle='rgb(128,128,128)';
+          renderCtx.fill();
         } else { // videoTransparent
-          ctx.fillStyle='#67e8f9';
-          ctx.fill();
+          renderCtx.fillStyle='#67e8f9';
+          renderCtx.fill();
         }
       }
     }
 
     async function renderSingleVideo(mode) {
       const outputFPS = parseInt(fpsInput.value);
-      const stream = canvas.captureStream(outputFPS);
+
+      // Create a temporary canvas with bounding box dimensions
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = boundingRect.width;
+      tempCanvas.height = boundingRect.height;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      const stream = tempCanvas.captureStream(outputFPS);
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'video/webm;codecs=vp9',
         videoBitsPerSecond: 50000000
@@ -1587,28 +1604,46 @@
         mediaRecorder.start();
 
         (async () => {
-          for(let frame = 0; frame < totalFrames; frame++) {
+          for(let frame = startFrame; frame <= endFrame; frame++) {
             const t = frameToTime(frame);
             video.currentTime = t;
 
-            ctx.clearRect(0,0,canvas.width,canvas.height);
+            // Update scrubber to show rendering progress
+            renderFrame(frame);
 
-            // Background
+            tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+            // Wait for video to seek
+            await new Promise(r => seekResolve = r);
+
+            // Background - crop from main canvas
             if (mode === 'blackWhite') {
-              ctx.fillStyle = 'black';
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              tempCtx.fillStyle = 'black';
+              tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
             } else {
+              // First draw the full video to main canvas to get proper scaling
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+              // Then copy the cropped region from main canvas to temp canvas
+              tempCtx.drawImage(canvas,
+                boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height,
+                0, 0, tempCanvas.width, tempCanvas.height);
             }
 
-            // Render all visible hulls combined
+            // Render all visible hulls combined - adjusted for crop
             for(const hullData of hulls){
               if(!hullData.visible) continue; // Skip invisible hulls
 
               const hull = buildHullFaces(hullData.points);
               const poly = sliceHullAtFrame(hullData.points, hull, frame);
 
-              renderHullForMode(hull, poly, frame, mode);
+              // Adjust polygon coordinates for crop offset
+              const adjustedPoly = poly.map(p => ({
+                x: p.x - boundingRect.x,
+                y: p.y - boundingRect.y
+              }));
+
+              renderHullForMode(hull, adjustedPoly, frame, mode, tempCtx);
 
               // Render points only for videoTransparent mode
               if (mode === 'videoTransparent') {
@@ -1617,21 +1652,28 @@
                   const near = frame === p.z;
                   const onSurface = hull.surfacePoints && hull.surfacePoints.has(i);
 
-                  ctx.beginPath();
-                  ctx.arc(p.x, p.y, near ? 5 : 4, 0, 2*Math.PI);
+                  // Adjust point coordinates for crop offset
+                  const adjustedX = p.x - boundingRect.x;
+                  const adjustedY = p.y - boundingRect.y;
+
+                  // Skip points outside the crop area
+                  if(adjustedX < 0 || adjustedX > tempCanvas.width || adjustedY < 0 || adjustedY > tempCanvas.height) continue;
+
+                  tempCtx.beginPath();
+                  tempCtx.arc(adjustedX, adjustedY, near ? 5 : 4, 0, 2*Math.PI);
 
                   if(onSurface){
-                    ctx.fillStyle = '#fff';
-                    ctx.fill();
-                    ctx.lineWidth = 2;
-                    ctx.strokeStyle = near ? '#00ffa6' : '#000';
-                    ctx.stroke();
+                    tempCtx.fillStyle = '#fff';
+                    tempCtx.fill();
+                    tempCtx.lineWidth = 2;
+                    tempCtx.strokeStyle = near ? '#00ffa6' : '#000';
+                    tempCtx.stroke();
                   } else {
-                    ctx.fillStyle = near ? '#ffaa00' : '#888';
-                    ctx.fill();
-                    ctx.lineWidth = 1;
-                    ctx.strokeStyle = '#444';
-                    ctx.stroke();
+                    tempCtx.fillStyle = near ? '#ffaa00' : '#888';
+                    tempCtx.fill();
+                    tempCtx.lineWidth = 1;
+                    tempCtx.strokeStyle = '#444';
+                    tempCtx.stroke();
                   }
                 }
               }
