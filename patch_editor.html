@@ -606,6 +606,14 @@
             <div class="help-item">
               <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
                 <svg width="60" height="40">
+                  <rect x="10" y="10" width="40" height="20" fill="none" stroke="#ff0000" stroke-width="2" stroke-dasharray="6,3"/>
+                </svg>
+              </span>
+              <span class="help-desc">CRITICAL: collides with other bounds</span>
+            </div>
+            <div class="help-item">
+              <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
+                <svg width="60" height="40">
                   <rect x="10" y="10" width="40" height="20" fill="none" stroke="var(--bbox-danger-primary)" stroke-width="2" stroke-dasharray="6,3"/>
                   <rect x="10" y="10" width="40" height="20" fill="none" stroke="var(--bbox-danger-secondary)" stroke-width="2" stroke-dasharray="6,3" stroke-dashoffset="4.5"/>
                 </svg>
@@ -1200,9 +1208,8 @@
         // Gray mode shows no points
       }
 
-      // Draw bounding box in GUI mode only when within time range (inclusive)
-      if (currentPreviewMode === 'gui' && totalFrames > 0 &&
-          clamped >= startFrame && clamped <= endFrame) {
+      // Draw bounding boxes in GUI mode (each bounds shows in its own time range)
+      if (currentPreviewMode === 'gui' && totalFrames > 0) {
         drawBoundingBox();
       }
 
@@ -1211,44 +1218,107 @@
       frameBox.textContent = `Frame ${clamped+1}/${totalFrames} · ${t.toFixed(2)}s`;
     }
 
-    function drawBoundingBox() {
-      const selectedBounds = getSelectedBounds();
-      if(!selectedBounds || !selectedBounds.visible) return;
+    function checkBoundsCollision(boundsA, boundsB) {
+      // Check 3D collision between two bounds (spatial + temporal)
+      const aRect = boundsA.rect;
+      const bRect = boundsB.rect;
 
-      const boundingRect = selectedBounds.rect;
-      const boxState = getBoundingBoxState();
+      // 2D spatial overlap check
+      const spatialOverlap = !(
+        aRect.x + aRect.width <= bRect.x ||  // A is left of B
+        bRect.x + bRect.width <= aRect.x ||  // B is left of A
+        aRect.y + aRect.height <= bRect.y || // A is above B
+        bRect.y + bRect.height <= aRect.y    // B is above A
+      );
 
-      ctx.save();
-      ctx.lineWidth = 3;
-      ctx.setLineDash([12, 6]);
+      // 1D temporal overlap check
+      const temporalOverlap = !(
+        boundsA.endFrame < boundsB.startFrame ||  // A ends before B starts
+        boundsB.endFrame < boundsA.startFrame     // B ends before A starts
+      );
 
-      if(boxState === 'intersects') {
-        // Orange dashed lines when intersecting (danger)
-        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-primary');
-        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+      return spatialOverlap && temporalOverlap;
+    }
 
-        ctx.lineDashOffset = 9;
-        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-secondary');
-        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
-      } else if(boxState === 'contains') {
-        // Cyan dashed lines when containing hull (useful)
-        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-primary');
-        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+    function getBoundsState(targetBounds) {
+      if(!targetBounds || !targetBounds.visible) return 'empty';
 
-        ctx.lineDashOffset = 9;
-        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-secondary');
-        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
-      } else {
-        // White/black dashed lines when empty (useless)
-        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-primary');
-        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
-
-        ctx.lineDashOffset = 9;
-        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-secondary');
-        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+      // Check collision with other bounds first (highest priority)
+      for(const otherBounds of bounds) {
+        if(otherBounds.id !== targetBounds.id && otherBounds.visible && checkBoundsCollision(targetBounds, otherBounds)) {
+          return 'collision';
+        }
       }
 
-      ctx.restore();
+      // Then check hull interaction (existing logic)
+      const boundingRect = targetBounds.rect;
+      const boxMinX = boundingRect.x;
+      const boxMaxX = boundingRect.x + boundingRect.width;
+      const boxMinY = boundingRect.y;
+      const boxMaxY = boundingRect.y + boundingRect.height;
+      const boxMinZ = targetBounds.startFrame;
+      const boxMaxZ = targetBounds.endFrame;
+
+      let hasPointsInside = false;
+      let hasIntersection = false;
+
+      for(const hullData of hulls) {
+        if(!hullData.visible) continue;
+
+        const hull = buildHullFaces(hullData.points);
+
+        for(const point of hullData.points) {
+          if(point.x >= boxMinX && point.x <= boxMaxX &&
+             point.y >= boxMinY && point.y <= boxMaxY &&
+             point.z >= boxMinZ && point.z <= boxMaxZ) {
+            hasPointsInside = true;
+            break;
+          }
+        }
+
+        if(hasPointsInside) break;
+      }
+
+      return hasPointsInside ? 'contains' : 'empty';
+    }
+
+    function drawBoundingBox() {
+      // Draw ALL visible bounds, each within its own time range
+      for(const bound of bounds) {
+        if(!bound.visible) continue;
+
+        // Check if this bounds is in ITS OWN time range at current frame
+        if(currentFrame < bound.startFrame || currentFrame > bound.endFrame) continue;
+
+        const boundingRect = bound.rect;
+        const isSelected = bound.id === selectedBoundsId;
+
+        ctx.save();
+        ctx.globalAlpha = 1.0; // All bounds 100% opaque
+
+        if(isSelected) {
+          // Selected bounds: thick, dashed
+          ctx.lineWidth = 3;
+          ctx.setLineDash([12, 6]);
+        } else {
+          // Ghost bounds: thin, solid
+          ctx.lineWidth = 1;
+          ctx.setLineDash([]);
+        }
+
+        // Always use the bounds' own color
+        ctx.strokeStyle = bound.color;
+        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+
+        // Selected bounds get the secondary dashed stroke
+        if(isSelected) {
+          ctx.lineDashOffset = 9;
+          ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-secondary');
+          ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+        }
+
+        ctx.restore();
+      }
     }
 
     function getBoundingBoxState() {
