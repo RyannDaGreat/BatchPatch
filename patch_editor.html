@@ -249,6 +249,89 @@
       font-size: 16px;
       line-height: 1.4;
     }
+    .help-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.4);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .help-overlay.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .help-content {
+      background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 30px;
+      padding: 50px;
+      max-width: 600px;
+      backdrop-filter: blur(30px);
+      box-shadow:
+        0 30px 60px rgba(0,0,0,0.5),
+        0 15px 30px rgba(0,0,0,0.3),
+        inset 0 1px 0 rgba(255,255,255,0.2);
+    }
+    .help-content h2 {
+      font-family: Futura, system-ui, -apple-system, sans-serif;
+      font-size: 32px;
+      margin: 0 0 30px 0;
+      color: var(--accent);
+      text-align: center;
+      font-weight: normal;
+      letter-spacing: 2px;
+    }
+    .help-content hr {
+      border: none;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(103,232,249,0.5), transparent);
+      margin: 25px 0;
+    }
+    .help-section {
+      margin: 20px 0;
+    }
+    .help-section h3 {
+      font-family: Futura, system-ui, -apple-system, sans-serif;
+      font-size: 18px;
+      color: var(--accent);
+      margin: 0 0 15px 0;
+      font-weight: normal;
+      letter-spacing: 1px;
+    }
+    .help-item {
+      display: flex;
+      align-items: baseline;
+      margin: 10px 0;
+      color: var(--fg);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .help-key {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 4px 10px;
+      margin-right: 15px;
+      font-family: Futura, system-ui, -apple-system, sans-serif;
+      font-size: 12px;
+      min-width: 100px;
+      text-align: center;
+      color: var(--accent);
+    }
+    .help-desc {
+      flex: 1;
+      color: rgba(255,255,255,0.8);
+    }
     .bounds-slider {
       position: relative;
       width: 100%;
@@ -304,6 +387,7 @@
     <span id="frameBox">Frame 0/0 · 0.00s</span>
     <button id="clear">Clear Points</button>
     <button id="renderVideo">Render 3 Videos</button>
+    <button id="helpBtn" style="width:32px; font-weight:bold;">?</button>
     <label style="margin-left:20px;">Preview:
       <select id="previewMode">
         <option value="gui">GUI</option>
@@ -327,6 +411,59 @@
       <button id="addHull" style="width:100%; margin-top:10px;">+ Add Hull</button>
     </div>
   </main>
+  <div id="helpOverlay" class="help-overlay">
+    <div class="help-content">
+      <h2>CONTROLS</h2>
+      <hr>
+      <div class="help-section">
+        <h3>Mouse Actions</h3>
+        <div class="help-item">
+          <span class="help-key">Click</span>
+          <span class="help-desc">Add point at current frame</span>
+        </div>
+        <div class="help-item">
+          <span class="help-key">Click + Drag</span>
+          <span class="help-desc">Move existing point</span>
+        </div>
+        <div class="help-item">
+          <span class="help-key">Right Click</span>
+          <span class="help-desc">Delete point</span>
+        </div>
+        <div class="help-item">
+          <span class="help-key">Double Click</span>
+          <span class="help-desc">Jump to point's frame</span>
+        </div>
+      </div>
+      <hr>
+      <div class="help-section">
+        <h3>Playback</h3>
+        <div class="help-item">
+          <span class="help-key">Spacebar</span>
+          <span class="help-desc">Play/Pause video</span>
+        </div>
+        <div class="help-item">
+          <span class="help-key">Scrubber</span>
+          <span class="help-desc">Navigate frames</span>
+        </div>
+      </div>
+      <hr>
+      <div class="help-section">
+        <h3>Visual Indicators</h3>
+        <div class="help-item">
+          <span class="help-key">White Points</span>
+          <span class="help-desc">Points on hull surface</span>
+        </div>
+        <div class="help-item">
+          <span class="help-key">Orange Points</span>
+          <span class="help-desc">Points at current frame</span>
+        </div>
+        <div class="help-item">
+          <span class="help-key">Gray Points</span>
+          <span class="help-desc">Interior points</span>
+        </div>
+      </div>
+    </div>
+  </div>
   <div id="outputContainer" style="display:none; margin:20px; padding:20px; background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%); border-radius: 30px; backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 20px 40px rgba(0,0,0,0.3), 0 10px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);">
     <h3 style="margin:0 0 20px 0; font-size:18px; color:var(--fg); text-align:center;">Rendered Videos</h3>
     <div style="display:flex; gap:20px; width:100%;">
@@ -539,6 +676,8 @@
     const hullList = document.getElementById('hullList');
     const previewMode = document.getElementById('previewMode');
     const renderVideoBtn = document.getElementById('renderVideo');
+    const helpBtn = document.getElementById('helpBtn');
+    const helpOverlay = document.getElementById('helpOverlay');
     const msg = document.getElementById('msg');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
@@ -1222,6 +1361,24 @@
       dragRangeType = '';
     });
 
+
+    // Help overlay toggle
+    helpBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      helpOverlay.classList.add('visible');
+    });
+
+    helpOverlay.addEventListener('click', () => {
+      helpOverlay.classList.remove('visible');
+    });
+
+    // Spacebar for play/pause
+    document.addEventListener('keydown', (e) => {
+      if(e.code === 'Space' && e.target.tagName !== 'INPUT') {
+        e.preventDefault();
+        togglePlay();
+      }
+    });
 
     // Initialize hull list and video overlay
     renderHullList();
