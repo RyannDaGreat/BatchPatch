@@ -471,7 +471,7 @@
       <button id="addHull" style="width:100%; margin-top:10px;" disabled>+ Add Hull</button>
     </div>
     <div id="boundsPanel" class="hull-panel">
-      <h3 style="margin:0 0 10px 0; font-size:20px; font-weight:normal; text-align:center;">Crop Bounds</h3>
+      <h3 style="margin:0 0 10px 0; font-size:20px; font-weight:normal; text-align:center;">Patch Bounds</h3>
       <div style="height:1px; background:linear-gradient(90deg, transparent, rgba(255,107,107,0.5), transparent); margin-bottom:10px;"></div>
       <div id="boundsList"></div>
       <button id="addBounds" style="width:100%; margin-top:10px;" disabled>+ Add Bounds</button>
@@ -609,7 +609,7 @@
                   <rect x="10" y="10" width="40" height="20" fill="none" stroke="#ff0000" stroke-width="2" stroke-dasharray="6,3"/>
                 </svg>
               </span>
-              <span class="help-desc">CRITICAL: collides with other bounds</span>
+              <span class="help-desc">Danger: collides with other bounds</span>
             </div>
             <div class="help-item">
               <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
@@ -618,7 +618,7 @@
                   <rect x="10" y="10" width="40" height="20" fill="none" stroke="var(--bbox-danger-secondary)" stroke-width="2" stroke-dasharray="6,3" stroke-dashoffset="4.5"/>
                 </svg>
               </span>
-              <span class="help-desc">Danger: intersects hulls</span>
+              <span class="help-desc">Warning: intersects hulls</span>
             </div>
             <div class="help-item">
               <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
@@ -1055,6 +1055,7 @@
     let isDraggingBounds = false;
     let dragRangeType = ''; // 'start' or 'end'
     let dragBoundsType = ''; // 'corner', 'edge-top', etc.
+    let boundsColorCache = new Map(); // Cache bounds colors for current frame
 
     function frameToTime(fi){ return fi / fps; }
 
@@ -1065,6 +1066,9 @@
     async function renderFrame(fi){
       const clamped = fi|0;
       const t = frameToTime(clamped);
+
+      // Clear bounds color cache for new frame
+      boundsColorCache.clear();
 
       if (isFinite(video.duration)) {
         video.currentTime = t;
@@ -1207,6 +1211,9 @@
       currentFrame = clamped;
       scrubber.value = String(clamped);
       frameBox.textContent = `Frame ${clamped+1}/${totalFrames} · ${t.toFixed(2)}s`;
+
+      // Update bounds list colors in real-time as frame changes
+      renderBoundsList();
     }
 
     function checkBoundsCollision(boundsA, boundsB) {
@@ -1721,10 +1728,19 @@
     }
 
     function getBoundsDisplayColor(bound) {
+      // Use cache if available for this frame
+      if(boundsColorCache.has(bound.id)) {
+        return boundsColorCache.get(bound.id);
+      }
+
+      let color;
+
       // Check collision with other bounds first (highest priority)
       for(const otherBounds of bounds) {
         if(otherBounds.id !== bound.id && otherBounds.visible && checkBoundsCollision(bound, otherBounds)) {
-          return '#ff0000'; // Red for collision
+          color = '#ff0000'; // Red for collision
+          boundsColorCache.set(bound.id, color);
+          return color;
         }
       }
 
@@ -1810,12 +1826,16 @@
 
       // Return appropriate color based on state
       if(hasIntersection) {
-        return getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-primary'); // Orange
+        color = getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-primary'); // Orange
       } else if(hasPointsInside) {
-        return getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-primary'); // Cyan
+        color = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-primary'); // Cyan
       } else {
-        return getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-primary'); // White/black
+        color = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-primary'); // White/black
       }
+
+      // Cache the result
+      boundsColorCache.set(bound.id, color);
+      return color;
     }
 
     function renderBoundsList(){
