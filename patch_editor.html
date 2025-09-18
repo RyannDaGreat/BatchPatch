@@ -1265,6 +1265,13 @@
       const hull = buildHullFaces(selectedHull.points);
       const warning = (selectedHull.points.length>=4 && hull.type==='empty') ? 'Need ≥4 points across different times for a 3D hull.' : '';
       msg.textContent = warning;
+
+      // Update render button text to show selected bounds
+      const selectedBounds = getSelectedBounds();
+      if(selectedBounds) {
+        renderVideoBtn.textContent = `Render "${selectedBounds.name}"`;
+      }
+
       renderFrame(currentFrame);
     }
 
@@ -1871,8 +1878,13 @@
 
     async function renderSingleVideo(mode) {
       const outputFPS = parseInt(fpsInput.value);
+      const selectedBounds = getSelectedBounds();
+      if(!selectedBounds || !selectedBounds.visible) {
+        throw new Error('No visible bounds selected for rendering');
+      }
 
-      // Create a temporary canvas with bounding box dimensions
+      // Create a temporary canvas with selected bounds dimensions
+      const boundingRect = selectedBounds.rect;
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = boundingRect.width;
       tempCanvas.height = boundingRect.height;
@@ -2051,7 +2063,8 @@
         });
 
         outputContainer.style.display = 'block';
-        msg.textContent = 'All videos rendered!';
+        const selectedBounds = getSelectedBounds();
+        msg.textContent = `Videos rendered for "${selectedBounds?.name || 'Unknown Bounds'}"!`;
 
       } catch(e) {
         msg.textContent = 'Error rendering videos: ' + e.message;
