@@ -756,20 +756,23 @@
       };
     }
 
-    function findClosestPoint(x, y, threshold = 15){
+    function findClosestPoint(x, y, threshold = 5){
       let closestHull = null;
       let closestIndex = -1;
       let closestDist = threshold;
 
-      for(const hull of hulls){
-        if(!hull.visible) continue;
-        for(let i = 0; i < hull.points.length; i++){
-          const p = hull.points[i];
-          const dist = Math.hypot(p.x - x, p.y - y);
-          if(dist < closestDist){
-            closestDist = dist;
-            closestHull = hull;
-            closestIndex = i;
+      // Only check points in the selected hull when in GUI mode
+      if(currentPreviewMode === 'gui'){
+        const selectedHull = getSelectedHull();
+        if(selectedHull && selectedHull.visible){
+          for(let i = 0; i < selectedHull.points.length; i++){
+            const p = selectedHull.points[i];
+            const dist = Math.hypot(p.x - x, p.y - y);
+            if(dist < closestDist){
+              closestDist = dist;
+              closestHull = selectedHull;
+              closestIndex = i;
+            }
           }
         }
       }
@@ -1023,6 +1026,18 @@
         selectedHullId = closest.hull.id; // Select the hull with the point being dragged
         canvas.style.cursor = 'grabbing';
         e.preventDefault();
+      } else if(!closest && !edgeType && currentPreviewMode === 'gui'){
+        // Add new point and immediately start dragging it
+        const selectedHull = getSelectedHull();
+        if(selectedHull && selectedHull.visible){
+          selectedHull.points.push({x: coords.x, y: coords.y, z: currentFrame});
+          isDragging = true;
+          dragPointIndex = selectedHull.points.length - 1;
+          dragHullId = selectedHull.id;
+          canvas.style.cursor = 'grabbing';
+          updateDisplay();
+          e.preventDefault();
+        }
       }
     });
 
@@ -1076,7 +1091,7 @@
       }
     });
 
-    // Mouse up - finish dragging or add point
+    // Mouse up - finish dragging
     canvas.addEventListener('mouseup', e=>{
       if(isDragging){
         isDragging = false;
@@ -1087,22 +1102,16 @@
         isDraggingBounds = false;
         dragBoundsType = '';
         canvas.style.cursor = 'crosshair';
-      } else if(!isDragging && !isDraggingBounds && isFinite(video.duration)){
-        // Add new point if we weren't dragging anything
-        const coords = getCanvasCoords(e);
-        const closest = findClosestPoint(coords.x, coords.y);
-        const edgeType = isClickingBoundingEdge(coords.x, coords.y);
-        if(!closest && !edgeType){ // Only add if not clicking on existing point or edge
-          const selectedHull = getSelectedHull();
-          selectedHull.points.push({x: coords.x, y: coords.y, z: currentFrame});
-          updateDisplay();
-        }
       }
     });
 
-    // Right-click to delete point
+    // Right-click to delete point (only for selected hull)
     canvas.addEventListener('contextmenu', e=>{
       e.preventDefault();
+
+      // Only allow deletion in GUI mode for selected hull
+      if(currentPreviewMode !== 'gui') return;
+
       const r=canvas.getBoundingClientRect();
       const scaleX = canvas.width / r.width;
       const scaleY = canvas.height / r.height;
@@ -1110,9 +1119,11 @@
       const y=(e.clientY-r.top) * scaleY;
       const selectedHull = getSelectedHull();
 
-      // Find closest point within threshold
+      if(!selectedHull || !selectedHull.visible) return;
+
+      // Find closest point within threshold (same as visual radius)
       let closestIndex = -1;
-      let closestDist = 15; // pixel threshold
+      let closestDist = 5; // pixel threshold matching visual radius
       for(let i=0; i<selectedHull.points.length; i++){
         const dist = Math.hypot(selectedHull.points[i].x - x, selectedHull.points[i].y - y);
         if(dist < closestDist){
