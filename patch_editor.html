@@ -844,7 +844,7 @@
     let hulls = [{id: 0, name: 'Hull 1', points: [], color: '#67e8f9', visible: true}];
     let selectedHullId = 0;
     let nextHullId = 1;
-    let bounds = [{id: 0, name: 'Bounds 1', rect: {x: 0, y: 0, width: 0, height: 0}, color: '#ff6b6b', visible: true}];
+    let bounds = [{id: 0, name: 'Bounds 1', rect: {x: 0, y: 0, width: 0, height: 0}, color: '#ff6b6b', visible: true, startFrame: 0, endFrame: 0}];
     let selectedBoundsId = 0;
     let nextBoundsId = 1;
     let renderedBounds = new Map(); // boundsId -> {gui, gray, mask} video URLs
@@ -862,6 +862,77 @@
       return bounds.find(b => b.id === selectedBoundsId);
     }
 
+    // DRY helper functions for UI elements
+    function createButton(emoji, isDelete = false) {
+      const btn = document.createElement('button');
+      btn.innerHTML = emoji;
+      btn.style.cssText = `width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(${isDelete ? '255,100,100' : '100,100,100'},0.2); border-radius:2px; cursor:pointer;`;
+      btn.disabled = totalFrames === 0;
+      return btn;
+    }
+
+    function createColorIndicator(color) {
+      const indicator = document.createElement('div');
+      indicator.style.cssText = `width:12px; height:12px; border-radius:50%; background:${color}; margin-right:6px; flex-shrink:0; cursor:pointer;`;
+      return indicator;
+    }
+
+    function createItemContainer(isSelected) {
+      const item = document.createElement('div');
+      item.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px; border-radius:4px; margin:2px 0; cursor:pointer;';
+      if(isSelected) item.style.background = 'rgba(255,107,107,0.2)';
+      return item;
+    }
+
+    function createNameSpan(name) {
+      const span = document.createElement('span');
+      span.textContent = name;
+      span.style.cssText = 'flex:1; font-size:12px;';
+      return span;
+    }
+
+    // Clean handlers for hull operations
+    function handleHullNameChange(hullId, newName) {
+      const hull = hulls.find(h => h.id === hullId);
+      if(hull) {
+        hull.name = newName;
+        renderHullList();
+        updateDisplay();
+      }
+    }
+
+    function handleHullColorChange(hullId, newColor) {
+      const hull = hulls.find(h => h.id === hullId);
+      if(hull) {
+        hull.color = newColor;
+        renderHullList();
+        updateDisplay();
+      }
+    }
+
+    function handleHullDelete(hullId) {
+      if(hulls.length <= 1) return;
+      hulls = hulls.filter(h => h.id !== hullId);
+      if(selectedHullId === hullId) selectedHullId = hulls[0].id;
+      renderHullList();
+      updateDisplay();
+    }
+
+    function handleHullSelect(hullId) {
+      selectedHullId = hullId;
+      renderHullList();
+      updateDisplay();
+    }
+
+    function handleHullToggleVisibility(hullId) {
+      const hull = hulls.find(h => h.id === hullId);
+      if(hull) {
+        hull.visible = !hull.visible;
+        renderHullList();
+        updateDisplay();
+      }
+    }
+
     // Clean handlers for bounds operations
     function handleBoundsNameChange(boundsId, newName) {
       const bound = bounds.find(b => b.id === boundsId);
@@ -875,6 +946,16 @@
         if(boundsId === selectedBoundsId) {
           renderVideoBtn.textContent = `Render "${newName}"`;
         }
+      }
+    }
+
+    function handleBoundsColorChange(boundsId, newColor) {
+      const bound = bounds.find(b => b.id === boundsId);
+      if(bound) {
+        bound.color = newColor;
+        renderBoundsList();
+        updateDisplay();
+        updateOutputSections();
       }
     }
 
@@ -895,8 +976,26 @@
       updateOutputSections();
     }
 
+    function handleBoundsToggleVisibility(boundsId) {
+      const bound = bounds.find(b => b.id === boundsId);
+      if(bound) {
+        bound.visible = !bound.visible;
+        renderBoundsList();
+        updateDisplay();
+      }
+    }
+
     function handleBoundsSelect(boundsId) {
       selectedBoundsId = boundsId;
+
+      // Update time range to this bounds' range
+      const bound = bounds.find(b => b.id === boundsId);
+      if(bound) {
+        startFrame = bound.startFrame;
+        endFrame = bound.endFrame;
+        updateTimeRangeUI();
+      }
+
       renderBoundsList();
       updateDisplay();
 
@@ -905,6 +1004,18 @@
       if(selectedBounds) {
         renderVideoBtn.textContent = `Render "${selectedBounds.name}"`;
       }
+    }
+
+    function updateTimeRangeUI() {
+      if(totalFrames <= 0) return;
+
+      const startPercent = (startFrame / (totalFrames - 1)) * 100;
+      const endPercent = (endFrame / (totalFrames - 1)) * 100;
+
+      startThumb.style.left = startPercent + '%';
+      endThumb.style.left = endPercent + '%';
+      rangeFill.style.left = startPercent + '%';
+      rangeFill.style.width = (endPercent - startPercent) + '%';
     }
 
     function updateOutputSections() {
@@ -1310,22 +1421,13 @@
     function initializeBounds(){
       startFrame = 0;
       endFrame = totalFrames - 1;
-      // Initialize the first bounds to full canvas size
+      // Initialize the first bounds to full canvas size and time range
       bounds[0].rect = {x: 0, y: 0, width: canvas.width, height: canvas.height};
-      updateRangeSlider();
+      bounds[0].startFrame = startFrame;
+      bounds[0].endFrame = endFrame;
+      updateTimeRangeUI();
     }
 
-    function updateRangeSlider(){
-      if(totalFrames <= 1) return;
-      // Simple percentage positioning that matches browser's native range input behavior
-      const startPercent = totalFrames > 1 ? (startFrame / (totalFrames - 1)) * 100 : 0;
-      const endPercent = totalFrames > 1 ? (endFrame / (totalFrames - 1)) * 100 : 0;
-
-      startThumb.style.left = startPercent + '%';
-      endThumb.style.left = endPercent + '%';
-      rangeFill.style.left = startPercent + '%';
-      rangeFill.style.width = (endPercent - startPercent) + '%';
-    }
 
 
     function updateDisplay(){
@@ -1401,58 +1503,30 @@
     function renderHullList(){
       hullList.innerHTML = '';
       hulls.forEach(hull => {
-        const item = document.createElement('div');
-        item.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px; border-radius:4px; margin:2px 0; cursor:pointer;';
-        if(hull.id === selectedHullId) item.style.background = 'rgba(103,232,249,0.2)';
+        const item = createItemContainer(hull.id === selectedHullId);
+        if(hull.id === selectedHullId) item.style.background = 'rgba(103,232,249,0.2)'; // Different color for hulls
 
-        const colorIndicator = document.createElement('div');
-        colorIndicator.style.cssText = `width:12px; height:12px; border-radius:50%; background:${hull.color}; margin-right:6px; flex-shrink:0;`;
-
-        const name = document.createElement('span');
-        name.textContent = hull.name;
-        name.style.cssText = 'flex:1; font-size:12px;';
-
-        const colorBtn = document.createElement('button');
-        colorBtn.innerHTML = '🎨';
-        colorBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(100,100,100,0.2); border-radius:2px; cursor:pointer;';
-        colorBtn.disabled = totalFrames === 0;
-
-        const editBtn = document.createElement('button');
-        editBtn.innerHTML = '✏️';
-        editBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(100,100,100,0.2); border-radius:2px; cursor:pointer;';
-        editBtn.disabled = totalFrames === 0;
-
-        const eyeBtn = document.createElement('button');
-        eyeBtn.textContent = hull.visible ? '👁' : '👁‍🗨';
-        eyeBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(100,100,100,0.2); border-radius:2px; cursor:pointer;';
-        eyeBtn.disabled = totalFrames === 0;
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.textContent = '🗑';
-        deleteBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(255,100,100,0.2); border-radius:2px; cursor:pointer;';
-        deleteBtn.disabled = totalFrames === 0;
+        const colorIndicator = createColorIndicator(hull.color);
+        const name = createNameSpan(hull.name);
+        const colorBtn = createButton('🎨');
+        const editBtn = createButton('✏️');
+        const eyeBtn = createButton(hull.visible ? '👁' : '👁‍🗨');
+        const deleteBtn = createButton('🗑', true);
 
         item.appendChild(colorIndicator);
         item.appendChild(name);
         item.appendChild(colorBtn);
         item.appendChild(editBtn);
         item.appendChild(eyeBtn);
-        if(hulls.length > 1) item.appendChild(deleteBtn); // Don't allow deleting last hull
+        if(hulls.length > 1) item.appendChild(deleteBtn);
 
         item.addEventListener('click', e => {
           if(e.target === deleteBtn) {
-            if(hulls.length > 1) {
-              hulls = hulls.filter(h => h.id !== hull.id);
-              if(selectedHullId === hull.id) selectedHullId = hulls[0].id;
-              renderHullList();
-              updateDisplay();
-            }
+            handleHullDelete(hull.id);
           } else if(e.target === eyeBtn) {
-            hull.visible = !hull.visible;
-            renderHullList();
-            updateDisplay();
+            handleHullToggleVisibility(hull.id);
           } else if(e.target === colorBtn) {
-            e.stopPropagation(); // Prevent hull selection
+            e.stopPropagation();
 
             // Remove any existing color picker first
             const existingPicker = document.querySelector('.simple-color-picker');
@@ -1478,9 +1552,7 @@
 
             // Real-time color updates
             colorInput.addEventListener('input', (event) => {
-              hull.color = event.target.value;
-              renderHullList(); // Update hull list to show new color indicator
-              updateDisplay(); // Update display immediately
+              handleHullColorChange(hull.id, event.target.value);
             });
 
             // Close when clicking outside
@@ -1495,20 +1567,14 @@
               document.addEventListener('click', closeColorPicker);
             }, 100);
 
-            // Auto-open the color picker
             colorInput.click();
           } else if(e.target === editBtn) {
-            // Create an inline text input for editing the name
             const newName = prompt('Enter new hull name:', hull.name);
             if(newName !== null && newName.trim() !== '') {
-              hull.name = newName.trim();
-              renderHullList();
-              updateDisplay();
+              handleHullNameChange(hull.id, newName.trim());
             }
           } else {
-            selectedHullId = hull.id;
-            renderHullList();
-            updateDisplay();
+            handleHullSelect(hull.id);
           }
         });
 
@@ -1519,49 +1585,40 @@
     function renderBoundsList(){
       boundsList.innerHTML = '';
       bounds.forEach(bound => {
-        const item = document.createElement('div');
-        item.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px; border-radius:4px; margin:2px 0; cursor:pointer;';
-        if(bound.id === selectedBoundsId) item.style.background = 'rgba(255,107,107,0.2)';
-
-        const colorIndicator = document.createElement('div');
-        colorIndicator.style.cssText = `width:12px; height:12px; border-radius:50%; background:${bound.color}; margin-right:6px; flex-shrink:0;`;
-
-        const name = document.createElement('span');
-        name.textContent = bound.name;
-        name.style.cssText = 'flex:1; font-size:12px;';
-
-        const editBtn = document.createElement('button');
-        editBtn.innerHTML = '✏️';
-        editBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(100,100,100,0.2); border-radius:2px; cursor:pointer;';
-        editBtn.disabled = totalFrames === 0;
-
-        const eyeBtn = document.createElement('button');
-        eyeBtn.textContent = bound.visible ? '👁' : '👁‍🗨';
-        eyeBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(100,100,100,0.2); border-radius:2px; cursor:pointer;';
-        eyeBtn.disabled = totalFrames === 0;
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.textContent = '🗑';
-        deleteBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px; border:none; background:rgba(255,100,100,0.2); border-radius:2px; cursor:pointer;';
-        deleteBtn.disabled = totalFrames === 0;
+        const item = createItemContainer(bound.id === selectedBoundsId);
+        const colorIndicator = createColorIndicator(bound.color);
+        const name = createNameSpan(bound.name);
+        const colorBtn = createButton('🎨');
+        const editBtn = createButton('✏️');
+        const eyeBtn = createButton(bound.visible ? '👁' : '👁‍🗨');
+        const deleteBtn = createButton('🗑', true);
 
         item.appendChild(colorIndicator);
         item.appendChild(name);
+        item.appendChild(colorBtn);
         item.appendChild(editBtn);
         item.appendChild(eyeBtn);
-        if(bounds.length > 1) item.appendChild(deleteBtn); // Don't allow deleting last bounds
+        if(bounds.length > 1) item.appendChild(deleteBtn);
 
         item.addEventListener('click', e => {
           if(e.target === deleteBtn) {
             handleBoundsDelete(bound.id);
           } else if(e.target === eyeBtn) {
-            bound.visible = !bound.visible;
-            renderBoundsList();
-            updateDisplay();
+            handleBoundsToggleVisibility(bound.id);
           } else if(e.target === editBtn) {
             const newName = prompt('Enter new bounds name:', bound.name);
             if(newName !== null && newName.trim() !== '') {
               handleBoundsNameChange(bound.id, newName.trim());
+            }
+          } else if(e.target === colorBtn) {
+            const newColor = prompt('Enter new color (hex):', bound.color);
+            if(newColor !== null && newColor.trim() !== '') {
+              handleBoundsColorChange(bound.id, newColor.trim());
+            }
+          } else if(e.target === colorIndicator) {
+            const newColor = prompt('Enter new color (hex):', bound.color);
+            if(newColor !== null && newColor.trim() !== '') {
+              handleBoundsColorChange(bound.id, newColor.trim());
             }
           } else {
             handleBoundsSelect(bound.id);
@@ -1799,7 +1856,9 @@
         name: `Bounds ${nextBoundsId}`,
         rect: {x: 50, y: 50, width: 200, height: 150},
         color: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#fef160', '#67e8f9'][bounds.length % 6],
-        visible: true
+        visible: true,
+        startFrame: startFrame,
+        endFrame: endFrame
       };
       bounds.push(newBounds);
       selectedBoundsId = newBounds.id;
@@ -1841,7 +1900,14 @@
           renderFrame(endFrame);
         }
 
-        updateRangeSlider();
+        // Save to selected bounds
+        const selectedBounds = getSelectedBounds();
+        if(selectedBounds) {
+          selectedBounds.startFrame = startFrame;
+          selectedBounds.endFrame = endFrame;
+        }
+
+        updateTimeRangeUI();
         updateDisplay();
       }
     });
