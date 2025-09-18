@@ -957,15 +957,6 @@
       }
     }
 
-    function handleBoundsColorChange(boundsId, newColor) {
-      const bound = bounds.find(b => b.id === boundsId);
-      if(bound) {
-        bound.color = newColor;
-        renderBoundsList();
-        updateDisplay();
-        updateOutputSections();
-      }
-    }
 
     function handleBoundsDelete(boundsId) {
       if(bounds.length <= 1) return;
@@ -1292,6 +1283,7 @@
 
         const boundingRect = bound.rect;
         const isSelected = bound.id === selectedBoundsId;
+        const boxState = getBoundsState(bound);
 
         ctx.save();
         ctx.globalAlpha = 1.0; // All bounds 100% opaque
@@ -1306,15 +1298,41 @@
           ctx.setLineDash([]);
         }
 
-        // Always use the bounds' own color
-        ctx.strokeStyle = bound.color;
-        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
-
-        // Selected bounds get the secondary dashed stroke
-        if(isSelected) {
-          ctx.lineDashOffset = 9;
-          ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-secondary');
+        // Use condition-based colors for ALL bounds (selected and ghost)
+        if(boxState === 'collision') {
+          // RED for collision - highest danger!
+          ctx.strokeStyle = '#ff0000';
           ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+        } else if(boxState === 'intersects') {
+          // Orange for hull intersection
+          ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-primary');
+          ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+
+          if(isSelected) {
+            ctx.lineDashOffset = 9;
+            ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-secondary');
+            ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+          }
+        } else if(boxState === 'contains') {
+          // Cyan for useful (contains hull)
+          ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-primary');
+          ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+
+          if(isSelected) {
+            ctx.lineDashOffset = 9;
+            ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-secondary');
+            ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+          }
+        } else {
+          // White/black for empty (useless)
+          ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-primary');
+          ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+
+          if(isSelected) {
+            ctx.lineDashOffset = 9;
+            ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-secondary');
+            ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+          }
         }
 
         ctx.restore();
@@ -1652,20 +1670,32 @@
       });
     }
 
+    function getBoundsDisplayColor(bound) {
+      const boxState = getBoundsState(bound);
+
+      if(boxState === 'collision') {
+        return '#ff0000'; // Red for collision
+      } else if(boxState === 'intersects') {
+        return getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-primary'); // Orange
+      } else if(boxState === 'contains') {
+        return getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-primary'); // Cyan
+      } else {
+        return getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-primary'); // White/black
+      }
+    }
+
     function renderBoundsList(){
       boundsList.innerHTML = '';
       bounds.forEach(bound => {
         const item = createItemContainer(bound.id === selectedBoundsId);
-        const colorIndicator = createColorIndicator(bound.color);
+        const colorIndicator = createColorIndicator(getBoundsDisplayColor(bound));
         const name = createNameSpan(bound.name);
-        const colorBtn = createButton('🎨');
         const editBtn = createButton('✏️');
         const eyeBtn = createButton(bound.visible ? '👁' : '👁‍🗨');
         const deleteBtn = createButton('🗑', true);
 
         item.appendChild(colorIndicator);
         item.appendChild(name);
-        item.appendChild(colorBtn);
         item.appendChild(editBtn);
         item.appendChild(eyeBtn);
         if(bounds.length > 1) item.appendChild(deleteBtn);
@@ -1679,16 +1709,6 @@
             const newName = prompt('Enter new bounds name:', bound.name);
             if(newName !== null && newName.trim() !== '') {
               handleBoundsNameChange(bound.id, newName.trim());
-            }
-          } else if(e.target === colorBtn) {
-            const newColor = prompt('Enter new color (hex):', bound.color);
-            if(newColor !== null && newColor.trim() !== '') {
-              handleBoundsColorChange(bound.id, newColor.trim());
-            }
-          } else if(e.target === colorIndicator) {
-            const newColor = prompt('Enter new color (hex):', bound.color);
-            if(newColor !== null && newColor.trim() !== '') {
-              handleBoundsColorChange(bound.id, newColor.trim());
             }
           } else {
             handleBoundsSelect(bound.id);
