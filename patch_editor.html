@@ -23,6 +23,12 @@
       --point-interior-stroke:#444;
       --point-edge-fill:#fff;
       --slider-width:360px;
+      --bbox-useful-primary:rgba(103,232,249,0.8);
+      --bbox-useful-secondary:rgba(67,156,195,0.6);
+      --bbox-danger-primary:rgba(255,165,0,0.8);
+      --bbox-danger-secondary:rgba(139,69,19,0.6);
+      --bbox-useless-primary:rgba(255,255,255,0.5);
+      --bbox-useless-secondary:rgba(0,0,0,0.5);
     }
     *{box-sizing:border-box}
     body {
@@ -419,7 +425,7 @@
     <label for="file" class="file-button">Choose Video</label>
     <label>FPS <input id="fps" type="number" min="1" max="120" step="1" value="30" disabled></label>
     <button id="playPause" disabled>▶</button>
-    <div style="display: flex; flex-direction: column; gap: 2px;">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
       <input id="scrubber" type="range" min="0" max="0" step="1" value="0" disabled />
       <div class="bounds-slider">
         <div class="bounds-track"></div>
@@ -447,7 +453,7 @@
       </select>
     </label>
     <span id="msg"></span>
-    <button id="helpBtn" style="width:32px; font-size:16px; margin-left:auto;">?</button>
+    <button id="helpBtn" style="width:40px; height:40px; border-radius:50%; margin-left:auto; display:flex; align-items:center; justify-content:center; padding:0;"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 20 20"><path fill="#fff" d="M10 20a10 10 0 1 1 0-20a10 10 0 0 1 0 20m2-13c0 .28-.21.8-.42 1L10 9.58c-.57.58-1 1.6-1 2.42v1h2v-1c0-.29.21-.8.42-1L13 9.42c.57-.58 1-1.6 1-2.42a4 4 0 1 0-8 0h2a2 2 0 1 1 4 0m-3 8v2h2v-2z"/></svg></button>
   </header>
   <main>
     <div class="video-container" style="position: relative;">
@@ -584,11 +590,29 @@
             <div class="help-item">
               <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
                 <svg width="60" height="40">
-                  <rect x="10" y="10" width="40" height="20" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-dasharray="6,3"/>
-                  <rect x="10" y="10" width="40" height="20" fill="none" stroke="rgba(0,0,0,0.5)" stroke-width="2" stroke-dasharray="6,3" stroke-dashoffset="4.5"/>
+                  <rect x="10" y="10" width="40" height="20" fill="none" stroke="var(--bbox-useful-primary)" stroke-width="2" stroke-dasharray="6,3"/>
+                  <rect x="10" y="10" width="40" height="20" fill="none" stroke="var(--bbox-useful-secondary)" stroke-width="2" stroke-dasharray="6,3" stroke-dashoffset="4.5"/>
                 </svg>
               </span>
-              <span class="help-desc">Defines crop area for export</span>
+              <span class="help-desc">Useful: fully contains hulls</span>
+            </div>
+            <div class="help-item">
+              <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
+                <svg width="60" height="40">
+                  <rect x="10" y="10" width="40" height="20" fill="none" stroke="var(--bbox-danger-primary)" stroke-width="2" stroke-dasharray="6,3"/>
+                  <rect x="10" y="10" width="40" height="20" fill="none" stroke="var(--bbox-danger-secondary)" stroke-width="2" stroke-dasharray="6,3" stroke-dashoffset="4.5"/>
+                </svg>
+              </span>
+              <span class="help-desc">Danger: intersects hulls</span>
+            </div>
+            <div class="help-item">
+              <span class="help-key" style="display:flex; align-items:center; justify-content:center;">
+                <svg width="60" height="40">
+                  <rect x="10" y="10" width="40" height="20" fill="none" stroke="var(--bbox-useless-primary)" stroke-width="2" stroke-dasharray="6,3"/>
+                  <rect x="10" y="10" width="40" height="20" fill="none" stroke="var(--bbox-useless-secondary)" stroke-width="2" stroke-dasharray="6,3" stroke-dashoffset="4.5"/>
+                </svg>
+              </span>
+              <span class="help-desc">Useless: contains no hulls</span>
             </div>
           </div>
         </div>
@@ -996,34 +1020,42 @@
     }
 
     function drawBoundingBox() {
-      const hasIntersection = checkBoundingBoxHullIntersection();
+      const boxState = getBoundingBoxState();
 
       ctx.save();
       ctx.lineWidth = 3;
       ctx.setLineDash([12, 6]);
 
-      if(hasIntersection) {
-        // Orange dashed lines when intersecting
-        ctx.strokeStyle = 'rgba(255,165,0,0.8)';
+      if(boxState === 'intersects') {
+        // Orange dashed lines when intersecting (danger)
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-primary');
         ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
 
         ctx.lineDashOffset = 9;
-        ctx.strokeStyle = 'rgba(139,69,19,0.6)';
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-danger-secondary');
+        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+      } else if(boxState === 'contains') {
+        // Cyan dashed lines when containing hull (useful)
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-primary');
+        ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
+
+        ctx.lineDashOffset = 9;
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useful-secondary');
         ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
       } else {
-        // Original white/black dashed lines
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        // White/black dashed lines when empty (useless)
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-primary');
         ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
 
         ctx.lineDashOffset = 9;
-        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bbox-useless-secondary');
         ctx.strokeRect(boundingRect.x, boundingRect.y, boundingRect.width, boundingRect.height);
       }
 
       ctx.restore();
     }
 
-    function checkBoundingBoxHullIntersection() {
+    function getBoundingBoxState() {
       // 3D bounding box defined by current frame range and 2D bounds
       const boxMinX = boundingRect.x;
       const boxMaxX = boundingRect.x + boundingRect.width;
@@ -1032,11 +1064,24 @@
       const boxMinZ = startFrame;
       const boxMaxZ = endFrame;
 
-      // Check all visible hulls for edge intersections
+      let hasPointsInside = false;
+      let hasIntersection = false;
+
+      // Check all visible hulls
       for(const hullData of hulls) {
         if(!hullData.visible) continue;
 
         const hull = buildHullFaces(hullData.points);
+
+        // Check if any points are inside the bounding box
+        for(const point of hullData.points) {
+          if(point.x >= boxMinX && point.x <= boxMaxX &&
+             point.y >= boxMinY && point.y <= boxMaxY &&
+             point.z >= boxMinZ && point.z <= boxMaxZ) {
+            hasPointsInside = true;
+            break;
+          }
+        }
 
         // Check hull edges for intersection with bounding box faces
         if(hull.type === '3d') {
@@ -1047,9 +1092,11 @@
               const p2 = hullData.points[face[(i + 1) % 3]];
 
               if(lineIntersectsBoundingBox(p1, p2, boxMinX, boxMaxX, boxMinY, boxMaxY, boxMinZ, boxMaxZ)) {
-                return true;
+                hasIntersection = true;
+                break;
               }
             }
+            if(hasIntersection) break;
           }
         } else if(hull.type === '2d') {
           // For 2D hull, check edge segments
@@ -1058,7 +1105,8 @@
             const p2 = hullData.points[j];
 
             if(lineIntersectsBoundingBox(p1, p2, boxMinX, boxMaxX, boxMinY, boxMaxY, boxMinZ, boxMaxZ)) {
-              return true;
+              hasIntersection = true;
+              break;
             }
           }
         } else if(hull.type === '1d') {
@@ -1068,12 +1116,17 @@
           const p2 = hullData.points[j];
 
           if(lineIntersectsBoundingBox(p1, p2, boxMinX, boxMaxX, boxMinY, boxMaxY, boxMinZ, boxMaxZ)) {
-            return true;
+            hasIntersection = true;
           }
         }
+
+        if(hasIntersection) break;
       }
 
-      return false;
+      // Priority: intersects > contains > empty
+      if(hasIntersection) return 'intersects';
+      if(hasPointsInside) return 'contains';
+      return 'empty';
     }
 
     function lineIntersectsBoundingBox(p1, p2, minX, maxX, minY, maxY, minZ, maxZ) {
@@ -1418,9 +1471,10 @@
       }
     });
 
-    // Mouse down - start dragging or add point
+    // Mouse down - start dragging or add point (left-click only)
     canvas.addEventListener('mousedown', e=>{
       if (!isFinite(video.duration)) return;
+      if (e.button !== 0) return; // Only handle left-click
 
       const coords = getCanvasCoords(e);
 
